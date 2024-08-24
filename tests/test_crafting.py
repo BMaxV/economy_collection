@@ -1,4 +1,4 @@
-from gamedevstuff import crafting
+from economy_collection import crafting
 import unittest
 
 class CraftingTest(unittest.TestCase):

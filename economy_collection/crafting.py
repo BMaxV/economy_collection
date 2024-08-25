@@ -91,13 +91,15 @@ class Recipe:
         
         lowest_ns = []
         for itemname in self.requirements:
-            if itemname in inventory:
+            if itemname not in inventory:
+                have_n = 0
+            else:
                 have_n = inventory[itemname]["amount"]
-                lowest = have_n.__floordir__(self.requirements[itemname])
-                lowest_ns.append(lowest)
-        
+            lowest = have_n // self.requirements[itemname]
+            lowest_ns.append(lowest)
+
         lowest = min(lowest_ns)
-        
+
         return lowest
 
 class Workplace:

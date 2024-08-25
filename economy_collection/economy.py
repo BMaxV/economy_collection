@@ -787,7 +787,8 @@ class EconomyAgent:
     
     def get_coverage_relevant_orders(self, env, good_recipe, amount):
         """
-        
+        filter my market environemnt for relevant sell orders for ingredients
+        for my the recipe and the amount
         """
         all_amount_covered = []
         all_product_amounts_covered = []
@@ -799,7 +800,7 @@ class EconomyAgent:
             product_amount_covered = 0
             my_returns = self.find_cheapest_seller(env,req.name,amount)
             if my_returns == None:
-                return
+                continue
                 
             elif type(my_returns) == list:
                 # ... I know it's a list of orders and I'm dealing with an amount.
@@ -808,24 +809,41 @@ class EconomyAgent:
                 
                 req_met = 0
                 order_counter = 0
-                
+                # while I still need to look things up
+                # and there are orders left to do it with.
                 while req_met < req_target and order_counter < len(my_returns):
                     
+                    # this is not elegant...? I'm catching that
+                    # in the other function and using it as 
+                    # a break condition if it stays None
+                    next_price = None
+                    
                     my_order = my_returns[order_counter]
-                    
-                    
-                    req_met += my_order.amount
-                    
-                    order_counter += 1
-                    amount_I_can_cover = req_met /  good_recipe.requirements[req]
-                    requirements_cost += my_order.price * good_recipe.requirements[req] * amount_I_can_cover
-                    
-                    # this sets the point where I get a new price and I start counting.
-                    if order_counter < len(my_returns):
-                        next_price = my_returns[order_counter].price
-                        break_point = (amount_I_can_cover,req,next_price)
+                    if order_counter +1 < len(my_returns):
+                        next_order = my_returns[order_counter+1]
+                        # ...and isn't overwritten here.
+                        next_price = next_order.price
+                        
+                    # if I'm below the limit...
+                    if my_order.amount + req_met < req_target:
+                        req_met += my_order.amount
+                        amount_I_can_cover = req_met /  good_recipe.requirements[req]
+                        
+                        requirements_cost += my_order.price * my_order.amount
+                        
+                        break_point = (amount_I_can_cover, req, next_price)
                         price_point_breaks.append(break_point)
-                    
+                        
+                    else:
+                        missing_amount = req_target - req_met
+                        amount_I_can_cover = amount
+                        
+                        requirements_cost += my_order.price * missing_amount
+                        
+                        break_point = (amount_I_can_cover, req, next_price)
+                        price_point_breaks.append(break_point)
+                        
+                    order_counter += 1
                 
                 product_amount_covered = req_met / good_recipe.requirements[req]
                 all_product_amounts_covered.append(product_amount_covered)
@@ -833,9 +851,7 @@ class EconomyAgent:
             relevant_orders[req.name] = my_returns
         
         price_point_breaks.sort(key= lambda x :x[0])
-        
-        print("price points",price_point_breaks)
-        
+                
         return all_amount_covered, all_product_amounts_covered, price_point_breaks, relevant_orders, requirements_cost
         
     def find_manufacturing_cost(self, env, good_recipe, amount = 1, requirements_stocks = None, custom_set_values = None):
@@ -863,7 +879,7 @@ class EconomyAgent:
         
         Does this have a false?
         """
-        
+        make_p, manufacturing_price_points, amount_covered = 0,[],0
         #for requirements
         if requirements_stocks == None:
             requirements_stocks = {} # init to empty.
@@ -873,10 +889,10 @@ class EconomyAgent:
         stocks_prices  = self.get_stocks_prices(good_recipe, requirements_stocks, env)
         
         # whenever 
-        output = self.get_coverage_relevant_orders(env,good_recipe,amount)
-        print("my output",output)
+        output = self.get_coverage_relevant_orders(env, good_recipe, amount)
+        
         if output == None:
-            return None
+            return make_p, manufacturing_price_points, amount_covered
         
         all_amount_covered, all_product_amounts_covered, price_point_breaks, relevant_orders, requirements_cost = output
         
@@ -915,41 +931,69 @@ class EconomyAgent:
             counter += 1
         
         return total_price
-        
     
     def get_manufacturing_price_points(self,coverage_output,good_recipe,amount):
+        """
+        the point of this function is to create an equivalent to market orders, for manufacturing.
+        
+        so "I can make n objects for x money"
+        
+        I'm doing this by reusing the inputs from the market orders to
+        get the prices for the ingredients and at any point where any
+        ingredient market order volume ends, I'm inheriting that
+        into my manufacturing price points
+        
+        ingredients volumes with prices:
+        |-|---|-|
+        |--|-|--|
+        
+        product volumes with prices:
+        |-||-||-|
+        
+        """
         all_amount_covered, all_product_amounts_covered, price_point_breaks, relevant_orders, requirements_cost = coverage_output
         manufacturing_price_points = []
+        
+        for req in good_recipe.requirements:
+            if req.name not in relevant_orders:
+                return []
         
         if amount > 1:
             base_price = 0
             prices = {}
             total_number = 0
+            
+            # so I have a price dict.
+            # and I'm updating the price dict. at the breakpoints.
+            
             for req in good_recipe.requirements:
                 price = relevant_orders[req.name][0].price
-                prices[req] = price*good_recipe.requirements[req]
+                prices[req] = price * good_recipe.requirements[req]
             
-                        
             old_number = 0
+                        
             for break_point in price_point_breaks:
                 
                 (new_number, req, next_price) = break_point
                 product_diff = new_number - old_number
                 
                 if product_diff == 0:
+                    prices[req] = next_price
                     continue
                 
                 old_number = new_number
                 price = 0
-                for x in prices:
-                    price += prices[x]*good_recipe.requirements[x]
-                print("price is 4?",price)
+                for ingredient_name in prices:
+                    price += prices[ingredient_name] * good_recipe.requirements[ingredient_name]
+                                
                 MPP = ManufacturingPricePoint(price,product_diff,recipe=good_recipe)
                 manufacturing_price_points.append(MPP)
-                
                 prices[req] = next_price
+                
                 total_number += product_diff
                 if total_number > amount:
+                    break
+                if next_price == None:
                     break
         
         return manufacturing_price_points
@@ -1127,7 +1171,8 @@ class EconomyAgent:
         else:
             price_list = self.find_cheapest_seller(env,good_recipe.name,amount)
         
-        make_p, manufacturing_price_points, amount_covered = self.find_manufacturing_cost(env, good_recipe, amount)
+        r = self.find_manufacturing_cost(env, good_recipe, amount)
+        make_p, manufacturing_price_points, amount_covered = r 
         
         amount_bought = 0
         amount_made = 0
@@ -1161,7 +1206,7 @@ class EconomyAgent:
                     amount_made += price_point.amount
                     
                     total_make_cost += price_point.price * price_point.amount
-                    print("price point",price_point.price, price_point.amount, price_point.price * price_point.amount)
+                    
                     manufacturing_price_point_index += 1
                 
                 can_manufacture = manufacturing_price_point_index < len( manufacturing_price_points)

@@ -109,7 +109,7 @@ class TestEconomy(unittest.TestCase):
         assert r[0].location == M2
     
     
-    def test_get_manufacturing_price_points(self):
+    def test_get_manufacturing_price_points_basic(self):
         
         
         MyAgent = economy.EconomyAgent()
@@ -163,21 +163,89 @@ class TestEconomy(unittest.TestCase):
         coverage_output  = MyAgent.get_coverage_relevant_orders(E,good_recipe,amount)
         mpps = MyAgent.get_manufacturing_price_points(coverage_output,good_recipe,amount)
         
-        print("THIS OUTPUT")
+        assert mpps[0].amount == 10
+        assert mpps[0].price == 2
+        assert mpps[1].amount == 10
+        assert mpps[1].price == 6
+        assert mpps[2].amount == 5
+        assert mpps[2].price == 10
+    
+    
+    
+    def test_get_manufacturing_price_points_insufficient_orders(self):
         
+        
+        MyAgent = economy.EconomyAgent()
+        
+        materials, products, recipes = crafting.default()
+        
+        good_recipe = recipes["Bread"]
+        
+        
+        TG = economy.Tradegood
+        water = TG("Water")
+        wheat = TG("Grain")
+        bread = TG("Bread")
+        goods = {water.name: water, wheat.name: wheat, bread.name: bread}
+        request_table = [water.name, wheat.name, bread.name]
+        #result_table = economy.market_health_check(goods, request_table)
+        
+        MySeller1 = economy.EconomyAgent({"Water":{"amount":20},"Grain":{"amount":20}})
+        MySeller2 = economy.EconomyAgent({"Water":{"amount":20},"Grain":{"amount":20}})
+        MySeller3 = economy.EconomyAgent({"Water":{"amount":20},"Grain":{"amount":20},"Bread":{"amount":10}})
+        
+        E = economy.EconomyEnvironment()
+        
+        M1 = economy.Market((1,0,0),)
+        M2 = economy.Market((5,0,0),)
+        M3 = economy.Market((4,3,0),)
+        
+        O11 = economy.Order(water.name,price=5,amount=5,creator=MySeller1,sell=True)
+        O12 = economy.Order(wheat.name,price=5,amount=5,creator=MySeller1,sell=True)
+        M1.put_order(O11,MySeller1,sell=True)
+        M1.put_order(O12,MySeller1,sell=True)
+        
+        O21 = economy.Order(water.name,price=1,amount=5,creator=MySeller2,sell=True)
+        O22 = economy.Order(wheat.name,price=1,amount=5,creator=MySeller2,sell=True)
+        M2.put_order(O21,MySeller2,sell=True)
+        M2.put_order(O22,MySeller2,sell=True)
+        
+        O31 = economy.Order(water.name,price=3,amount=5,creator=MySeller3,sell=True)
+        O32 = economy.Order(wheat.name,price=3,amount=5,creator=MySeller3,sell=True)
+        O33 = economy.Order(bread.name,price=3,amount=5,creator=MySeller3,sell=True)
+        M3.put_order(O31,MySeller3,sell=True)
+        M3.put_order(O32,MySeller3,sell=True)
+        M3.put_order(O33,MySeller3,sell=True)
+        
+        E.locations[M1.id] = M1
+        E.locations[M2.id] = M2
+        E.locations[M3.id] = M3
+        
+        # this is the amount I'm requesting
+        amount = 25
+        
+        coverage_output  = MyAgent.get_coverage_relevant_orders(E,good_recipe,amount)
+        mpps = MyAgent.get_manufacturing_price_points(coverage_output,good_recipe,amount)
+        
+        # this is what I can deliver
+        assert mpps[0].amount == 5
+        assert mpps[0].price == 2
+        assert mpps[1].amount == 5
+        assert mpps[1].price == 6
+        assert mpps[2].amount == 5
+        assert mpps[2].price == 10
+        
+        # which is less than I want, but that's not really a problem
+        # of that function.
+        
+        my_sum = 0
         for x in mpps:
-            print(x)
-            #print(x.amount, x.price)
-        
-        assert mpps[0].amount == 10 
-        assert mpps[0].price  == 2
-        assert mpps[1].amount == 0
-        assert mpps[1].price  == 4
-        assert mpps[2].amount == 10
-        assert mpps[2].price  == 6
-        assert mpps[3].amount == 0
-        assert mpps[3].price  == 8
-        
+            my_sum+=x.amount
+            
+        assert my_sum == 15
+        assert my_sum < amount
+
+    
     def test_get_relevant_orders(self):
         
         MyAgent = economy.EconomyAgent()
@@ -310,18 +378,12 @@ class TestEconomy(unittest.TestCase):
         
         # material price for the stuff that I'm not making,
         # would be 20 per piece.
-        print(r)
         
         assert r["make"]['total cost'] == make_cost
         assert r["make"]['amount'] == make_amount
         assert r['buy']['total price'] == buy_total
-        assert r['buy']['amount'] == buy_total
+        assert r['buy']['amount'] == buy_amount
         
-
-        
-        #assert 
-        #print(MyAgent.dists)
-        print("make or buy",r)
         #assert result_table == {'water': {'sell volume': 0.01, 'buy volume': 1, 'sell state': 'undervalued', 'buy state': 'undervalued'}, 'iron': {'sell volume': 1, 'buy volume': 0.2, 'sell state': 'overpriced', 'buy state': 'undervalued'}, 'bread': {'sell state': 'not sold', 'buy state': 'not bought'}}
         
         
@@ -340,8 +402,10 @@ class TestEconomy(unittest.TestCase):
         bread_recipe = recipies["Bread"]
         
         r = MyAgent.find_manufacturing_cost(E,bread_recipe,27)
-        assert r == None
         
+        # can't make any for any price.
+        assert r == (0, [], 0)
+
     def test_find_manufacturing_cost(self):
         
         MyAgent = economy.EconomyAgent()
@@ -395,7 +459,7 @@ class TestEconomy(unittest.TestCase):
         r = MyAgent.find_manufacturing_cost(E,bread_recipe,27)
         if r != None:
             total_cost, pricepoints, asdf2 = r
-                
+        
         assert pricepoints[0].amount == 5
         assert pricepoints[0].price == 2.4
         
@@ -405,7 +469,7 @@ class TestEconomy(unittest.TestCase):
         assert pricepoints[2].amount == 5
         assert pricepoints[2].price == 4
         
-        assert pricepoints[3].amount == 15
+        assert pricepoints[3].amount == 12
         assert pricepoints[3].price == 5
         
         total_cost_real = 5*2.4 + 5*3.4 + 5*4 + 12*5
@@ -421,7 +485,7 @@ class TestEconomy(unittest.TestCase):
                 total_amount += x.amount
                 xs.append(total_amount)
                 ys.append(x.price)
-                print("amount at price",x.amount,x.price)
+                
             xs = [xs[0]]+xs
             ys = [ys[0]]+ys
             
@@ -546,15 +610,10 @@ class TestEconomy(unittest.TestCase):
         
         r2 = T2.market_interaction(M)
         
-        print(T1.transaction_log[0].good_a)
-        print(T1.transaction_log[0].amount_a)
-        print(T1.transaction_log[0].good_b)
-        print(T1.transaction_log[0].amount_b)
         
         assert len(T1.transaction_log)==1
         assert len(T2.transaction_log)==1
         
-        print("YOOOO\n\n",T1.inventory)
         assert "wood" in T2.inventory
         assert T2.inventory["money"]["amount"]==4990
         assert T2.inventory["wood"]["amount"]==10
@@ -589,8 +648,7 @@ class TestEconomy(unittest.TestCase):
         #assert "wood" in T2.inventory
         #assert T2.inventory["wood"]["amount"]==10
         
-        
-   def test_sell_order(self):
+    def test_sell_order(self):
         # order sales
         ENV = economy.EconomyEnvironment()
 
@@ -727,10 +785,11 @@ class TestEconomy(unittest.TestCase):
 def single_test():
     TE = TestEconomy()
     #TE.test_get_relevant_orders()
-    TE.test_get_manufacturing_price_points()
+    TE.test_get_manufacturing_price_points_basic()
+    TE.test_get_manufacturing_price_points_insufficient_orders()
     #TE.test_find_manufacturing_cost()
     #TE.test_find_manufacturing_cost_fail()
-    TE.test_make_or_buy()
+    #TE.test_make_or_buy()
     #TE.test_make_or_buy() 
 
 if __name__ == "__main__":

@@ -590,86 +590,84 @@ class TestEconomy(unittest.TestCase):
         #assert T2.inventory["wood"]["amount"]==10
         
         
-    def test_sell_order(self):
+   def test_sell_order(self):
         # order sales
-        ENV=economy.EconomyEnvironment()
-        
-        T1=economy.EconomyAgent()
-        T1.inventory={"wood":{"amount":25},"money":{"amount":5000}}
-        T1.wanted_goods={"wheat":{"amount":10}}
-        
-        T2=economy.EconomyAgent()
-        T2.inventory={"wheat":{"amount":25},"money":{"amount":5000}}
-        T2.wanted_goods={"wood":{"amount":10}}
-        
-        wheat=economy.Tradegood("wheat")
-        wood=economy.Tradegood("wood")
-        
-        M=economy.Market()
-        
-        
-        O2=economy.Order(wood,price=1,amount=10,creator=T1,sell=True)
-        M.put_order(O2,T1,sell=True)
-        
-        assert T1.inventory["wood"]["amount"]==15
-        
-        O=economy.Order(wheat,price=1,amount=10,creator=T2,sell=True)
-        M.put_order(O,T2,sell=True)
-        
-        assert T2.inventory["wheat"]["amount"]==15
-        
-        r1=T1.market_interaction(M)
-        r2=T2.market_interaction(M)
-        
+        ENV = economy.EconomyEnvironment()
+
+        T1 = economy.EconomyAgent()
+        T1.inventory = {"wood": {"amount": 25}, "money": {"amount": 5000}}
+        T1.wanted_goods = {"wheat": {"amount": 10}}
+
+        T2 = economy.EconomyAgent()
+        T2.inventory = {"wheat": {"amount": 25}, "money": {"amount": 5000}}
+        T2.wanted_goods = {"wood": {"amount": 10}}
+
+        # wheat=economy.Tradegood("wheat")
+        # wood=economy.Tradegood("wood")
+
+        M = economy.Market()
+
+        O2 = economy.Order("wood", price=1, amount=10, creator=T1, sell=True)
+        M.put_order(O2, T1, sell=True)
+
+        assert T1.inventory["wood"]["amount"] == 15
+
+        O = economy.Order("wheat", price=1, amount=10, creator=T2, sell=True)
+        M.put_order(O, T2, sell=True)
+
+        assert T2.inventory["wheat"]["amount"] == 15
+
+        r1 = T1.market_interaction(M)
+        r2 = T2.market_interaction(M)
+
         # the wheat and the wood should be in the collection area
-        
-        
+
         assert "wheat" in T1.inventory
-        assert T1.inventory["wheat"]["amount"]==10
+        assert T1.inventory["wheat"]["amount"] == 10
         assert "wood" in T2.inventory
-        assert T2.inventory["wood"]["amount"]==10
-        
+        assert T2.inventory["wood"]["amount"] == 10
+
     def test_buy_order(self):
         # order sales
-        ENV=economy.EconomyEnvironment()
-        
-        T1=economy.EconomyAgent()
-        T1.inventory={"wood":{"amount":25},"money":{"amount":5000}}
-        T1.wanted_goods={"wheat":{"amount":10}}
-        T1.offered_goods={"wood":{"amount":25}}
-        
-        T2=economy.EconomyAgent()
-        T2.inventory={"wheat":{"amount":25},"money":{"amount":5000}}
-        T2.wanted_goods={"wood":{"amount":10}}
-        T2.offered_goods={"wheat":{"amount":25}}
-        
-        wheat=economy.Tradegood("wheat")
-        wood=economy.Tradegood("wood")
-        
-        M=economy.Market()
-        
-        O=economy.Order(wheat,price=1,amount=10,creator=T1,sell=False)
-        M.put_order(O,T1,sell=False)
-        
-        assert T1.inventory["money"]["amount"]==4990
-        
-        O2=economy.Order(wood,price=1,amount=10,creator=T2,sell=False)
-        M.put_order(O2,T2,sell=False)
-        
-        assert T2.inventory["money"]["amount"]==4990
-        
-        r2=T2.market_interaction(M)
-        r1=T1.market_interaction(M)
-        r2=T2.market_interaction(M)
-        r1=T1.market_interaction(M)
-        
+        ENV = economy.EconomyEnvironment()
+
+        T1 = economy.EconomyAgent()
+        T1.inventory = {"wood":{"amount":25},"money":{"amount":5000}}
+        T1.wanted_goods = {"wheat":{"amount":10}}
+        T1.offered_goods = {"wood":{"amount":25}}
+
+        T2 = economy.EconomyAgent()
+        T2.inventory = {"wheat":{"amount":25},"money":{"amount":5000}}
+        T2.wanted_goods = {"wood":{"amount":10}}
+        T2.offered_goods = {"wheat":{"amount":25}}
+
+        # wheat=economy.Tradegood("wheat")
+        # wood=economy.Tradegood("wood")
+
+        M = economy.Market()
+
+        O = economy.Order("wheat",price=1,amount=10,creator=T1,sell=False)
+        M.put_order(O, T1,sell=False)
+
+        assert T1.inventory["money"]["amount"] == 4990
+
+        O2 = economy.Order("wood",price=1,amount=10,creator=T2,sell=False)
+        M.put_order(O2, T2,sell=False)
+
+        assert T2.inventory["money"]["amount"] == 4990
+
+        r2 = T2.market_interaction(M)
+        r1 = T1.market_interaction(M)
+        r2 = T2.market_interaction(M)
+        r1 = T1.market_interaction(M)
+
         # the wheat and the wood should be in the collection area
-        
-        
+
         assert "wheat" in T1.inventory
-        assert T1.inventory["wheat"]["amount"]==10
+        assert T1.inventory["wheat"]["amount"] == 10
         assert "wood" in T2.inventory
-        assert T2.inventory["wood"]["amount"]==10
+        assert T2.inventory["wood"]["amount"] == 10
+
     
             
     def test_bartering_1(self):

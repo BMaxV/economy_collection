@@ -683,6 +683,10 @@ class EconomyAgent:
         # so... this list is a temporary holder for objectified data
         # that is actually more table - like.
         
+        # this is for comparing general categories and 
+        # different products
+        self.manufacturing_price_point_cache = {}
+        
         # didn't have a positon? what?
         self.pos = (0,0,0)
         
@@ -752,7 +756,7 @@ class EconomyAgent:
         p_list.sort(key = lambda x : x.price)
         
         if p_list == []:
-            return None
+            return p_list
         elif amount == None:
             return [p_list[0]]
         else:
@@ -798,11 +802,12 @@ class EconomyAgent:
         
         for req in good_recipe.requirements:
             product_amount_covered = 0
-            my_returns = self.find_cheapest_seller(env,req.name,amount)
-            if my_returns == None:
+            cheapest_sellers = self.find_cheapest_seller(env,req.name,amount)
+            
+            if cheapest_sellers == None:
                 continue
                 
-            elif type(my_returns) == list:
+            elif type(cheapest_sellers) == list:
                 # ... I know it's a list of orders and I'm dealing with an amount.
                 
                 req_target = amount * good_recipe.requirements[req]
@@ -811,16 +816,16 @@ class EconomyAgent:
                 order_counter = 0
                 # while I still need to look things up
                 # and there are orders left to do it with.
-                while req_met < req_target and order_counter < len(my_returns):
+                while req_met < req_target and order_counter < len(cheapest_sellers):
                     
                     # this is not elegant...? I'm catching that
                     # in the other function and using it as 
                     # a break condition if it stays None
                     next_price = None
                     
-                    my_order = my_returns[order_counter]
-                    if order_counter +1 < len(my_returns):
-                        next_order = my_returns[order_counter+1]
+                    my_order = cheapest_sellers[order_counter]
+                    if order_counter +1 < len(cheapest_sellers):
+                        next_order = cheapest_sellers[order_counter+1]
                         # ...and isn't overwritten here.
                         next_price = next_order.price
                         
@@ -848,7 +853,7 @@ class EconomyAgent:
                 product_amount_covered = req_met / good_recipe.requirements[req]
                 all_product_amounts_covered.append(product_amount_covered)
                 
-            relevant_orders[req.name] = my_returns
+            relevant_orders[req.name] = cheapest_sellers
         
         price_point_breaks.sort(key= lambda x :x[0])
                 
@@ -956,6 +961,8 @@ class EconomyAgent:
         
         for req in good_recipe.requirements:
             if req.name not in relevant_orders:
+                return []
+            elif len(relevant_orders[req.name])==0:
                 return []
         
         if amount > 1:
@@ -1170,10 +1177,13 @@ class EconomyAgent:
             buy_p = self.find_cheapest_seller(env, good_recipe.name)
         else:
             price_list = self.find_cheapest_seller(env,good_recipe.name,amount)
-        
+            
         r = self.find_manufacturing_cost(env, good_recipe, amount)
+        
         make_p, manufacturing_price_points, amount_covered = r 
         
+        self.manufacturing_price_point_cache[good_recipe.name] = manufacturing_price_points
+                
         amount_bought = 0
         amount_made = 0
         
@@ -1233,7 +1243,7 @@ class EconomyAgent:
             if can_manufacture:
                 price_point = manufacturing_price_points[manufacturing_price_point_index]
                 amount_made += price_point.amount
-                total_make_cost += price_point.price
+                total_make_cost += price_point.price * price_point.amount
                 manufacturing_price_point_index += 1
                 can_manufacture = manufacturing_price_point_index < len( manufacturing_price_points)
                 continue

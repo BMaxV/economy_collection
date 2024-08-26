@@ -43,6 +43,20 @@ materials = ["wood", "MEGAwood", "iron", "MEGAiron"]
 groups = {"Food":["Bread","Fish"],
             "Consumer Goods":["Clothing"], # clothing could be it's own thing.
             "Tools":["Hammer","Shovel"]}
+            
+
+# It's starting to look like there are "any" groups
+# and there are very sepcific groups.
+# so, "any" one thing from my food category can be used as food
+# but if I need a Hammer, I can't use a shovel.
+
+# and the whole topic is multilayered
+# want screws and nuts to fix something, I can get any combination within reason
+# but it needs to be a matching combination.
+
+# and the same is true for set boni for equipment.
+
+# or for cooking dishes, with main and side dish.
 
 class Component:
     def __init__(self, name, possible_materials):

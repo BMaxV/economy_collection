@@ -69,8 +69,8 @@ class TestMyCity(unittest.TestCase):
         
         my_list = self.E.cyber_econ.elements
         # these will sell some stuff, buy some stuff.
-        my_list[0].payload.inventory = {"Food":{"amount":23},"Consumer Goods":{"amount":0},"money":{"amount":100}}
-        my_list[1].payload.inventory = {"Food":{"amount":0},"Consumer Goods":{"amount":23},"money":{"amount":100},"Wheat":{"amount":2},"Water":{"amount":2}}
+        my_list[0].payload.inventory = {"Food":{"amount":21},"Consumer Goods":{"amount":0},"money":{"amount":100}}
+        my_list[1].payload.inventory = {"Food":{"amount":0},"Consumer Goods":{"amount":23},"money":{"amount":100},"Grain":{"amount":100},"Water":{"amount":100}}
         
         # these will just buy
         my_list[2].payload.inventory = {"Food":{"amount":0},"Consumer Goods":{"amount":0},"money":{"amount":100}}
@@ -85,9 +85,14 @@ class TestMyCity(unittest.TestCase):
         
         econ_env = economy.EconomyEnvironment()
         M = economy.Market()
-        
+        #M = economy.Market()
+
+        city_list = []
+
         for my_object in my_list:
+            city_list.append(my_object.payload)
             trader = my_object.payload.econ_agent
+            #
             trader.inventory =  my_object.payload.inventory
             M.set_up_trader(trader)
         
@@ -96,11 +101,94 @@ class TestMyCity(unittest.TestCase):
         # I need to set up the environment the market,
         # the offers, etc. before I do my production planning.
         
-        for cyberob in my_list:
-            cyberob.payload.consumption_planning()
-            cyberob.payload.selling_planning_tick()
-            cyberob.payload.production_planning(econ_env)
-            cyberob.payload.market_interaction_planning()
+        for city in city_list:
+            city.consumption_planning()
+            
+            # this should set the numbers for what I can sell.
+            city.selling_planning_tick()
+        
+        # oooh, ok, so the basic trading expects "offered goods"
+        # and the production planning expects orders.
+        # hmmmmm.
+        # I probably can't do both.
+        
+        
+        temp_fix_prices = {}
+        temp_fix_prices["Grain"] = 0.4
+        temp_fix_prices["Water"] = 0.4
+        
+        for city in city_list:
+            #my_object.payload.econ_agent
+            trader = city.econ_agent
+            for key in trader.offered_goods:
+                price = 1
+                if key in temp_fix_prices:
+                    price = temp_fix_prices[key]
+                
+                my_order = economy.Order(key, price=price, amount=trader.offered_goods[key]["amount"], creator=trader, sell=True)
+                M.put_order(my_order, trader, sell=True)
+        
+        # this is kind of doing both, make or buy planning.
+        # hmmm and it's overriding the buy plan from somewhere else?
+        for city in city_list:
+            
+            # ok, so this step assumes I have the registered as orders
+            # not as traders.
+            # hm. I think I will set it up as orders.
+            
+            # this should set the numbers for what I need to make.
+            city.production_planning(econ_env)
+            
+            #...what's this?
+            
+            #assert "Food" not in city.buy_plan
+            # this adds food, even if I am already making bread.
+            # so...
+            #city.market_interaction_planning()
+            #assert "Food" in city.buy_plan
+        
+        # these two have recipe access, so they should be able to 
+        # determine that they can make bread.
+        
+        assert "Bread" in my_list[0].payload.production_plan
+        assert "Bread" in my_list[1].payload.production_plan
+        assert my_list[0].payload.production_plan["Bread"][0]
+        assert my_list[1].payload.production_plan["Bread"][0]
+        
+        object1 = my_list[0].payload.production_plan["Bread"][0]
+        object2 = my_list[1].payload.production_plan["Bread"][0]
+        
+        assert object1.amount == 10
+        assert object1.price == 0.8
+        assert object2.amount == 4
+        assert object2.price == 0.8
+        
+        object1 = my_list[0].payload.buy_plan
+        object2 = my_list[1].payload.buy_plan
+        
+        print(object1)
+        print(object2)
+        
+        
+        return
+        
+        for cyberob in city_list:
+            city.trading_tick(city_list)
+            city.production_tick(1)
+        
+        
+        for cyberob in city_list:
+            city.consumption_tick()
+        
+        print("calculations done")
+        for cyberob in city_list:
+            try:
+                assert city.inventory["Food"] == 0
+                assert city.inventory["Consumer Goods"] == 0
+            except AssertionError:
+                print("these should be zeroed")
+                print(city.inventory)
+                raise
         
     def test_basic_currency_flow_stocks_based_trade(self):
         """same setup as the basics. Maybe I should do this as a 
@@ -174,10 +262,8 @@ class TestMyCity(unittest.TestCase):
             assert data == result
             c += 1
         
-        
-        # render_my_cities(self.E)
-        
-            
+        render_my_cities(self.E)
+
 def render_my_cities(environment):
     
     from geom import geom
@@ -263,5 +349,5 @@ def single_test():
     my_object.tearDown()
     
 if __name__=="__main__":
-    # unittest.main()
-    single_test()
+    unittest.main()
+    #single_test()

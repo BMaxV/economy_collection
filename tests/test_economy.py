@@ -494,8 +494,35 @@ class TestEconomy(unittest.TestCase):
             plt.plot(xs,ys)
             plt.show()
             
+    def test_transaction_sum(self):
         
-    def figure_out_most_profitable_product(self):
+        T1 = economy.Transaction(None,"Wood",1,"money",2)
+        T2 = economy.Transaction(None,"Wood",2,"money",4)
+        
+        T3 = T1 + T2
+        
+        assert T3.good_a == T1.good_a
+        assert T3.amount_a == 3
+        assert T3.good_a == "Wood"
+        assert T3.amount_b == 6
+        assert T3.good_b == "money"
+        
+        myid1 = str(T3.id)
+        
+        T4 = economy.Transaction(None,"Wood",1,"money",2)
+        
+        T3 += T4
+        
+        myid2 = str(T3.id)
+        
+        assert myid1 != myid2
+        
+        assert T3.amount_a == 4
+        assert T3.good_a == "Wood"
+        assert T3.amount_b == 8
+        assert T3.good_b == "money"
+        
+    def test_figure_out_most_profitable_product(self):
         
         # so I need some list of transactions,
         # I need market prices for materials
@@ -503,10 +530,57 @@ class TestEconomy(unittest.TestCase):
         
         # if I sold out, there is more demand for product A
         # than product B, even if the % gain for product B is higher.
-        a = 1
         
+        a_market = economy.Market()
         
-    
+        my_agent = economy.EconomyAgent()
+        
+        my_agent.inventory = {"Food":{"amount":50},
+                            "Seashell":{"amount":50},
+                            "funny rock":{"amount":50},
+                            "Diamond":{"amount":10},
+                            }
+        
+        my_agent.transactions = [
+        economy.Transaction(None,"Wood",1,"money",-1,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Seashell",-1,"money",1,my_agent),
+        economy.Transaction(None,"Diamond",-1,"money",10,my_agent),
+        ]
+        
+        my_order = economy.Order("Food",2.5,20,my_agent)
+        my_order2 = economy.Order("Seashell",1,20,my_agent)
+        my_order3 = economy.Order("funny rock",1,20,my_agent)
+        my_order4 = economy.Order("Diamond",1,1,my_agent)
+        
+        a_market.put_order(my_order,my_agent)
+        a_market.put_order(my_order2,my_agent)
+        a_market.put_order(my_order3,my_agent)
+        a_market.put_order(my_order4,my_agent)
+        
+        my_order4.amount = 0
+        
+        # so, when I interact with the market in a regular way.
+        # I kind of want an analysis tick that 
+        
+        # when do i remove my old orders? probably some set time.
+                
+        # this is actually my highest selling product.
+        # not necessarily my most profitable one.
+        transaction_sum_list, sold_out = my_agent.figure_out_most_profitable_product()
+        
+        transaction_sum_list.sort(key= lambda x : x.amount_b, reverse=True)
+        
+        assert transaction_sum_list[0].good_a == "Food"
+        assert transaction_sum_list[0].good_b == "money"
+        assert transaction_sum_list[1].good_a == "Diamond"
+        
+        assert sold_out == ["Diamond"]     
+        
     def test_get_needed_material(self):
         # this is covered by shopping list in test_crafting.
         a=1
@@ -785,8 +859,9 @@ class TestEconomy(unittest.TestCase):
 def single_test():
     TE = TestEconomy()
     #TE.test_get_relevant_orders()
-    TE.test_get_manufacturing_price_points_basic()
-    TE.test_get_manufacturing_price_points_insufficient_orders()
+    TE.test_transaction_sum()
+    TE.test_figure_out_most_profitable_product()
+    #TE.test_get_manufacturing_price_points_insufficient_orders()
     #TE.test_find_manufacturing_cost()
     #TE.test_find_manufacturing_cost_fail()
     #TE.test_make_or_buy()

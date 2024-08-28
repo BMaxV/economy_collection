@@ -12,25 +12,38 @@ class ManufacturingPricePoint:
         return f"<gamedevstuff.economy.ManufacturingPricePoint {self.recipe.name} price:{self.price} n:{self.amount}>"
 
 class Order:
-    """this kind of a weak object, it's a python object for something
-    that will mostly exist in list or database form. I am not
-    certain I even need this type at all. Ah well. I might.
+    """
+    organizes market orders
     
-    Maybe when creating one for UI.
+    can be sell or buy order
+    
+    good should be a hashable id, preferably a str(id)
+    can be text for testing though.
+    
     """
     def __init__(self,good,price,amount,creator,sell=True,creation_time=None,minimum_amount=1):
         
         self.sell = sell
         self.good = good
         self.price = price
+        
         self.amount = amount
-    
+        self.max_amount = amount
+        
         self.creator = creator
         
         self.minimum_amount = minimum_amount
         self.creation_time  = creation_time
         
         self.location = None # filled by put_order ?
+        
+        self.repeat = False
+        
+        # toggle if you want to do this as a permanent thing.
+        # and I should make a list / tracker for making that easy.
+        # like restocking shelves.
+        
+        self.id = str(uuid.uuid4())
         
     def __repr__(self):
         return f"<gamedevstuff.economy.Order {self.good} price:{self.price} n:{self.amount}>"
@@ -65,7 +78,28 @@ class Transaction:
         self.good_b = good_b
         self.amount_b = amount_b
         self.party_b = party_b
+        
+        self.id = str(uuid.uuid4())
     
+    def __add__(self,other):
+        
+        if type(self) != type(other):
+            raise TypeError("that's not a transaction.")
+            
+        good_a_match = self.good_a == other.good_a
+        good_b_match = self.good_b == other.good_b
+        
+        if not( good_a_match and good_b_match):
+            raise ValueError(f"goods don't match a:{self.good_a}{other.good_a} b:{self.good_b}{other.good_b}")
+        
+        a_side = self.good_a, self.amount_a + other.amount_a
+        b_side = self.good_b, self.amount_b + other.amount_b
+        
+        T = Transaction(None,*a_side,*b_side,party_a=self)
+        
+        return T
+        
+        
     def __repr__(self):
         s="<gamedevstuff.economy.Transaction"
         s+=f" {self.good_a} x {self.amount_a} exchanged for {self.good_b} x {self.amount_b} at {self.date}"
@@ -679,6 +713,13 @@ class EconomyAgent:
         #formatted as good.name:log?
         self.transactions = {}
         self.transaction_log = [] # make it a list for now,
+        
+        # this may not always be populated?
+        # like, when I'm accessing these, I probably...
+        # need some load step somewhere.
+        # it just makes sense for this object to have this.
+        # maybe not always, but generally.
+        self.orders = {"sell_orders":{},"buy_orders":{}}
         # in practice I will do database operations with this.
         # so... this list is a temporary holder for objectified data
         # that is actually more table - like.
@@ -1079,6 +1120,72 @@ class EconomyAgent:
         
         return payment, trade_amount
     
+    def figure_out_most_profitable_product(self,timeperiod=30):
+        """
+        figure out the best products from the last x days?
+        
+        compare 
+        sell orders (did I sell out?)
+        volume
+        price
+        manufacturing cost
+        
+        make lists for
+        
+        money multiplier (sell_price/manufacturing cost) 
+        sell order stock remaining
+        money multiplier (sell_price/manufacturing cost) 
+        sell order stock hitting 0, true sellable volume being unknown
+        
+        
+        """
+        # self.orders
+        # self.transactions
+        
+        transaction_sum = {}
+        for ob in self.transactions:
+            if ob.good_a not in transaction_sum:
+                transaction_sum[ob.good_a] = ob
+            else:
+                transaction_sum[ob.good_a] += ob
+        
+        # figure out where I sold out (-> more demand than supply)
+        orders_sold_out = {}
+        for goodname in self.orders["sell_orders"]:
+            order_list = self.orders["sell_orders"][goodname]
+            for order in order_list:
+                if goodname not in orders_sold_out:
+                    if order.amount == 0:
+                        orders_sold_out[goodname] = True
+                    else:
+                        orders_sold_out[goodname] = False
+                else:
+                    if order.amount > 0:
+                        orders_sold_out[goodname] = False
+        
+        my_orders_sold_out = []
+        for x in orders_sold_out:
+            if orders_sold_out[x]:
+                my_orders_sold_out.append(x)
+        orders_sold_out = my_orders_sold_out
+        
+        transaction_sum_list = []
+        for goodname in transaction_sum:
+            transaction_sum_list.append(transaction_sum[goodname])
+        
+        return transaction_sum_list, orders_sold_out
+    
+    def calculate_requirement_to_restock_orders(self):
+        
+        sum_stuff = {}
+        
+        for order in self.orders:
+            if order.good not in sum_stuff:
+                sum_stuff[order.good] = 0
+            sum_stuff[order.good] += order.max_amount - order.amount
+        
+        return sum_stuff
+        
     def figure_out_payment_and_amount(self,trader,key):
         trade_amount = 0
         payment = 0
@@ -1351,6 +1458,9 @@ class Market:
         
         self.transactions = []
         
+        # do I want something like this?
+        self.order_archive = {} # should be str(id) : order
+        
         
         # let's pretend the market is actually an actor with
         # fixed prices and volumes that you can just buy from.
@@ -1575,10 +1685,17 @@ class Market:
         self.inventory[deposit_type]["amount"] += deposit_amount
                 
         if order.good not in self.orders[key]:
-            self.orders[key][order.good]=[]
+            self.orders[key][order.good] = []
+                
+        if order.good not in owner.orders[key]:
+            owner.orders[key][order.good] = []
             
         self.orders[key][order.good].append(order)
         self.orders[key][order.good].sort(key = lambda x : x.price, reverse=(not sell))
+        
+        owner.orders[key][order.good].append(order)
+        owner.orders[key][order.good].sort(key = lambda x : x.price, reverse=(not sell))
+        
         
     def resolve(self):
         

@@ -1661,40 +1661,62 @@ class Market:
         
         return offer_for
     
-    def put_order(self,order,owner,sell=True,verbose=False):
+    def restock_order(self,order,owner):
         
-        order.location = self
+        sell = order.sell
+        key, success = self.fill_and_file_order(order,owner,sell,amount=order.max_amount)
+        
+        
+        
+    def fill_and_file_order(self,order,owner,sell,amount=None):
+        """
+        overlap code between originally filing the order
+        at a market and restocking and refiling the same order
+        """
         
         if sell:
             key="sell_orders"
             deposit_type = order.good
-            deposit_amount = order.amount
+            deposit_amount = amount
+            order.amount = amount
         else:
             key = "buy_orders"
             deposit_type = "money"
-            deposit_amount = order.amount * order.price
+            deposit_amount = amount * order.price
         
         # if you don't have enough, you can't "file" the order
         if owner.inventory[deposit_type]["amount"] < deposit_amount:
-            return
+            return key, False
         
         # else take from owner, put into market.
         owner.inventory[deposit_type]["amount"] -= deposit_amount
         if deposit_type not in self.inventory:
             self.inventory[deposit_type]={"amount":0}
         self.inventory[deposit_type]["amount"] += deposit_amount
-                
+        
+        
+        
+        
         if order.good not in self.orders[key]:
             self.orders[key][order.good] = []
-                
-        if order.good not in owner.orders[key]:
-            owner.orders[key][order.good] = []
-            
+        
         self.orders[key][order.good].append(order)
         self.orders[key][order.good].sort(key = lambda x : x.price, reverse=(not sell))
+    
+        return key, True
         
-        owner.orders[key][order.good].append(order)
-        owner.orders[key][order.good].sort(key = lambda x : x.price, reverse=(not sell))
+    def put_order(self,order,owner,sell=True,verbose=False):
+        
+        order.location = self
+        
+        key, success = self.fill_and_file_order(order,owner,sell,amount = order.amount)
+        
+        if success:
+            if order.good not in owner.orders[key]:
+                owner.orders[key][order.good] = []
+            
+            owner.orders[key][order.good].append(order)
+            owner.orders[key][order.good].sort(key = lambda x : x.price, reverse=(not sell))
         
         
     def resolve(self):

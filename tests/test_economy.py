@@ -579,7 +579,96 @@ class TestEconomy(unittest.TestCase):
         assert transaction_sum_list[0].good_b == "money"
         assert transaction_sum_list[1].good_a == "Diamond"
         
-        assert sold_out == ["Diamond"]     
+        assert sold_out == ["Diamond"]
+    
+    def get_full_marketing(self):
+        
+        # get the best products by price / profit / volume / sales.
+        
+        a_market = economy.Market()
+        
+        my_agent = economy.EconomyAgent()
+        
+        my_agent.inventory = {"Food":{"amount":50},
+                            "Seashell":{"amount":50},
+                            "funny rock":{"amount":50},
+                            "Diamond":{"amount":10},
+                            }
+        
+        my_agent.transactions = [
+        economy.Transaction(None,"Wood",1,"money",-1,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Food",-2,"money",5,my_agent),
+        economy.Transaction(None,"Seashell",-1,"money",1,my_agent),
+        economy.Transaction(None,"Diamond",-1,"money",10,my_agent),
+        ]
+        
+        my_order = economy.Order("Food",2.5,20,my_agent)
+        my_order2 = economy.Order("Seashell",1,20,my_agent)
+        my_order3 = economy.Order("funny rock",1,20,my_agent)
+        my_order4 = economy.Order("Diamond",1,1,my_agent)
+        
+        a_market.put_order(my_order,my_agent)
+        a_market.put_order(my_order2,my_agent)
+        a_market.put_order(my_order3,my_agent)
+        a_market.put_order(my_order4,my_agent)
+        
+        my_order4.amount = 0
+        
+        # so, when I interact with the market in a regular way.
+        # I kind of want an analysis tick that 
+        
+        # when do i remove my old orders? probably some set time.
+                
+        # this is actually my highest selling product.
+        # not necessarily my most profitable one.
+        transaction_sum_list, sold_out = my_agent.figure_out_most_profitable_product()
+        
+        transaction_sum_list.sort(key= lambda x : x.amount_b, reverse=True)
+        
+        assert transaction_sum_list[0].good_a == "Food"
+        assert transaction_sum_list[0].good_b == "money"
+        assert transaction_sum_list[1].good_a == "Diamond"
+        
+        assert sold_out == ["Diamond"]
+        
+        # also set up the manufacturing info
+        
+        
+        a = 1
+    
+    def test_restock_orders(self):
+        
+        M = economy.Market()
+        agent = economy.EconomyAgent()
+        agent.inventory = {"Wood":{"amount":20},"Food":{"amount":20}}
+        
+        Order1 = economy.Order("Wood",1,10,self) 
+        Order2 = economy.Order("Food",1,10,self) 
+        
+        M.put_order(Order1,agent)
+        M.put_order(Order2,agent)
+        
+        
+        assert agent.inventory["Wood"]["amount"]==10
+        assert agent.inventory["Food"]["amount"]==10
+        
+        Order1.amount = 0
+        Order2.amount = 0
+        
+        M.restock_order(Order1,agent)
+        M.restock_order(Order2,agent)
+        
+        assert agent.inventory["Wood"]["amount"] == 0
+        assert agent.inventory["Food"]["amount"] == 0
+        
+        assert Order1.amount == 10
+        assert Order2.amount == 10
+        
+        
         
     def test_get_needed_material(self):
         # this is covered by shopping list in test_crafting.

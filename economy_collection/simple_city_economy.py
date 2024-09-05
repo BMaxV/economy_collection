@@ -350,20 +350,8 @@ class city:
             # that I have selected here to be used in my production plan
             # and I also want to translate the sell orders that I'm finding
             # here into my buy plan.
-            
-            for my_object in relevant_objects:
-                if "Manufac" in str(type(my_object)):
-                    # do this
-                    name = my_object.recipe.name
-                    if name not in production_plan:
-                        production_plan[name] = []
-                    production_plan[name].append(my_object)
-                    
-                if "Order" in str(type(my_object)):
-                    # do that.
-                    if my_object.good not in buy_plan:
-                        buy_plan[my_object.good] = []
-                    buy_plan[my_object.good].append(my_object)
+            self.add_to_procurement_plans(relevant_objects,production_plan,buy_plan)
+        
         
         self.production_plan = production_plan
         self.buy_plan = buy_plan
@@ -401,6 +389,21 @@ class city:
             # amount? It's not just about theoretical meeting of demand
             # I need to procure an amount X.
             a=1
+    
+    def add_to_procurement_plans(self,relevant_objects,production_plan,buy_plan):
+        for my_object in relevant_objects:
+            if "Manufac" in str(type(my_object)):
+                # do this
+                name = my_object.recipe.name
+                if name not in production_plan:
+                    production_plan[name] = []
+                production_plan[name].append(my_object)
+                
+            if "Order" in str(type(my_object)):
+                # do that.
+                if my_object.good not in buy_plan:
+                    buy_plan[my_object.good] = []
+                buy_plan[my_object.good].append(my_object)
     
     def market_interaction_planning(self):
         # make or buy is nice, just buy

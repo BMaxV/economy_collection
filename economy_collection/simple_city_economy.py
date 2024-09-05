@@ -319,17 +319,9 @@ class city:
             if economic_environment == None:
                 continue
             
-            full_offer_group_list = []
+            full_offer_group_list = self.make_full_offer_group_list(group_list)
             
-            for good_name in group_list:
-                offers = self.econ_agent.find_cheapest_seller(economic_environment,good_name,amount=None)
-                full_offer_group_list += offers
-                if good_name in self.econ_agent.manufacturing_price_point_cache:
-                    mpps = self.econ_agent.manufacturing_price_point_cache[good_name]
-                    full_offer_group_list += mpps
-                    
-                    
-            full_offer_group_list.sort(key=lambda x : x.price)
+        
             
             value = self.consumption[group_name]["amount"]
             
@@ -389,6 +381,21 @@ class city:
             # amount? It's not just about theoretical meeting of demand
             # I need to procure an amount X.
             a=1
+    
+    def make_full_offer_group_list(self,group_list):
+        
+        full_offer_group_list = []
+        
+        for good_name in group_list:
+            offers = self.econ_agent.find_cheapest_seller(economic_environment,good_name,amount=None)
+            full_offer_group_list += offers
+            if good_name in self.econ_agent.manufacturing_price_point_cache:
+                mpps = self.econ_agent.manufacturing_price_point_cache[good_name]
+                full_offer_group_list += mpps
+                
+                
+        full_offer_group_list.sort(key=lambda x : x.price)
+        return full_offer_group_list
     
     def add_to_procurement_plans(self,relevant_objects,production_plan,buy_plan):
         for my_object in relevant_objects:

@@ -201,7 +201,12 @@ class city:
         self.consumption["Food"] = {"amount" : self.population}
         self.consumption["Consumer Goods"] = {"amount" : self.population}
     
-    def find_possible_products(self):
+    def find_possible_products(self, unknown_name, compare_groups):
+        """
+        this feels redundant.
+        why am I doing this here and not in the economy.
+        """
+        know_how_d = {}
         possible_products = set()
         if unknown_name in crafting.groups:
             
@@ -216,7 +221,6 @@ class city:
             
             if len(possible_products) == 0:
                 know_how_d[groupname] = False
-                continue
             else:
                 know_how_d[groupname] = True
                 for productname in possible_products:
@@ -235,7 +239,9 @@ class city:
         
         # these are not the same.
     def production_planning(self,economic_environment=None):
+        """
         
+        """
         self.planned_raw_material = {}
         self.planned_production_output = {}
         # do i do replacement?
@@ -262,6 +268,8 @@ class city:
         
         compare_list = []
         compare_groups = {}
+        
+        print(self.consumption)
         for unknown_name in self.consumption:
             # this is multilayered, I shouldn't do this when I build
             # the basic steps.
@@ -274,32 +282,14 @@ class city:
             # this feels like overthinking.
             # this needs to be more complicated in the future, but
             # not right now.
-            possible_products, know_how_d = self.find_possible_products()
             
+            possible_products, know_how_d = self.find_possible_products(unknown_name, compare_groups)
+            
+            econ_env = economic_environment
+            self.variation_make_or_buy(possible_products,know_how_d,econ_env)
+            
+            print(unknown_name)
         
-            # ok, so with groups and specific stuff, 
-            
-            # so what I actually want is to test my needs against all 
-            # possible options that could meet it and then pick the cheapest.
-            # or otherwise best via a different evaluation function
-            # or metric.
-            
-            fake_needs = {}
-            for group_name in crafting.groups:
-                if group_name in self.consumption:
-                    for product_name in crafting.groups[group_name]:
-                        if product_name in possible_products:
-                            fake_needs[product_name] = self.consumption[group_name]
-            
-            for specific_product in possible_products:
-                recipe = self.recipes[specific_product]
-                
-                # also I don't need to decide make or buy at every tick.
-                # I can cache this. for this object, for x time.
-                
-                econ_env = economic_environment
-                r = self.econ_agent.make_or_buy(econ_env, recipe, amount = fake_needs[specific_product]["amount"])
-               
             # so to compare this, I need to have the other market data available
             # and I need to compare what's being offered
             # with what I can do.
@@ -319,7 +309,8 @@ class city:
             if economic_environment == None:
                 continue
             
-            full_offer_group_list = self.make_full_offer_group_list(group_list)
+            econ_env = economic_environment
+            full_offer_group_list = self.make_full_offer_group_list(group_list, econ_env)
             
         
             
@@ -382,12 +373,39 @@ class city:
             # I need to procure an amount X.
             a=1
     
-    def make_full_offer_group_list(self,group_list):
+    def variation_make_or_buy(self,possible_products,know_how_d, econ_env):
+        """
+        ok, so with groups and specific stuff, 
+        
+        so what I actually want is to test my needs against all 
+        possible options that could meet it and then pick the cheapest.
+        or otherwise best via a different evaluation function
+        or metric.
+        
+        the make or buy fills my cache?
+        """
+        fake_needs = {}
+        for group_name in crafting.groups:
+            if group_name in self.consumption:
+                for product_name in crafting.groups[group_name]:
+                    if product_name in possible_products:
+                        fake_needs[product_name] = self.consumption[group_name]
+        
+        for specific_product in possible_products:
+            recipe = self.recipes[specific_product]
+            
+            # also I don't need to decide make or buy at every tick.
+            # I can cache this. for this object, for x time.
+            amount = fake_needs[specific_product]["amount"]
+            self.econ_agent.make_or_buy(econ_env, recipe, amount = amount)
+           
+    
+    def make_full_offer_group_list(self,group_list,econ_env):
         
         full_offer_group_list = []
         
         for good_name in group_list:
-            offers = self.econ_agent.find_cheapest_seller(economic_environment,good_name,amount=None)
+            offers = self.econ_agent.find_cheapest_seller(econ_env,good_name,amount=None)
             full_offer_group_list += offers
             if good_name in self.econ_agent.manufacturing_price_point_cache:
                 mpps = self.econ_agent.manufacturing_price_point_cache[good_name]

@@ -200,7 +200,38 @@ class city:
         """
         self.consumption["Food"] = {"amount" : self.population}
         self.consumption["Consumer Goods"] = {"amount" : self.population}
+    
+    def find_possible_products(self):
+        possible_products = set()
+        if unknown_name in crafting.groups:
+            
+            groupname = unknown_name
+            all_group_members = set(crafting.groups[groupname])
+            know_how = set(self.recipes.keys())
+            
+            possible_products = all_group_members.intersection(know_how)
+            
+            this_group_list = [groupname] + list(all_group_members)
+            compare_groups[groupname] = this_group_list
+            
+            if len(possible_products) == 0:
+                know_how_d[groupname] = False
+                continue
+            else:
+                know_how_d[groupname] = True
+                for productname in possible_products:
+                    know_how_d[productname] = True
+                            
+        else:
+            product_name = unknown_name
+            if product_name not in self.recipes:
+                know_how_d[product_name]=False
+            else:
+                possible_products = set()
+                possible_products.add(product_name)
         
+        return possible_products, know_how_d
+    
         
         # these are not the same.
     def production_planning(self,economic_environment=None):
@@ -243,34 +274,9 @@ class city:
             # this feels like overthinking.
             # this needs to be more complicated in the future, but
             # not right now.
+            possible_products, know_how_d = self.find_possible_products()
             
-            if unknown_name in crafting.groups:
-                
-                groupname = unknown_name
-                all_group_members = set(crafting.groups[groupname])
-                know_how = set(self.recipes.keys())
-                
-                possible_products = all_group_members.intersection(know_how)
-                
-                this_group_list = [groupname] + list(all_group_members)
-                compare_groups[groupname] = this_group_list
-                
-                if len(possible_products) == 0:
-                    know_how_d[groupname] = False
-                    continue
-                else:
-                    know_how_d[groupname] = True
-                    for productname in possible_products:
-                        know_how_d[productname] = True
-                                
-            else:
-                product_name = unknown_name
-                if product_name not in self.recipes:
-                    know_how_d[product_name]=False
-                else:
-                    possible_products = set()
-                    possible_products.add(product_name)
-            
+        
             # ok, so with groups and specific stuff, 
             
             # so what I actually want is to test my needs against all 

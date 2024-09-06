@@ -837,7 +837,15 @@ class TestEconomy(unittest.TestCase):
         M.put_order(O, T2, sell=True)
 
         assert T2.inventory["wheat"]["amount"] == 15
-
+        
+        # these are naturally not happening simultaneously,
+        # so I need 2 calls each.
+        
+        # buy and put in pickup
+        r1 = T1.market_interaction(M)
+        r2 = T2.market_interaction(M)
+        
+        # pickup.
         r1 = T1.market_interaction(M)
         r2 = T2.market_interaction(M)
 
@@ -847,6 +855,12 @@ class TestEconomy(unittest.TestCase):
         assert T1.inventory["wheat"]["amount"] == 10
         assert "wood" in T2.inventory
         assert T2.inventory["wood"]["amount"] == 10
+        
+        s1 = T1.sum_difference_from_transactions()
+        s2 = T2.sum_difference_from_transactions()
+        
+        assert s1 == {'wood': -10, 'money': 0, 'wheat': 10}
+        assert s2 == {'wood': 10, 'money': 0, 'wheat': -10}
 
     def test_buy_order(self):
         # order sales
@@ -871,14 +885,24 @@ class TestEconomy(unittest.TestCase):
         M.put_order(O, T1,sell=False)
 
         assert T1.inventory["money"]["amount"] == 4990
+        assert T1.inventory["wood"]["amount"] == 25
+        assert "wheat" not in T1.inventory
 
         O2 = economy.Order("wood",price=1,amount=10,creator=T2,sell=False)
         M.put_order(O2, T2,sell=False)
 
         assert T2.inventory["money"]["amount"] == 4990
-
-        r2 = T2.market_interaction(M)
+        assert T2.inventory["wheat"]["amount"] == 25
+        assert "wood" not in T2.inventory
+        
+        # these are naturally not happening simultaneously,
+        # so I need 2 calls each.
+        
+        # buy and put in pickup
         r1 = T1.market_interaction(M)
+        r2 = T2.market_interaction(M)
+        
+        #pickup.
         r2 = T2.market_interaction(M)
         r1 = T1.market_interaction(M)
 
@@ -886,11 +910,17 @@ class TestEconomy(unittest.TestCase):
 
         assert "wheat" in T1.inventory
         assert T1.inventory["wheat"]["amount"] == 10
+        assert T1.inventory["wood"]["amount"] == 15
         assert "wood" in T2.inventory
         assert T2.inventory["wood"]["amount"] == 10
-
-    
-            
+        assert T2.inventory["wheat"]["amount"] == 15
+                
+        s1 = T1.sum_difference_from_transactions()
+        s2 = T2.sum_difference_from_transactions()
+        
+        assert s1 == {'wood': -10, 'money': 0, 'wheat': 10}
+        assert s2 == {'wood': 10, 'money': 0, 'wheat': -10}
+        
     def test_bartering_1(self):
         # bartering?
         ENV=economy.EconomyEnvironment()
@@ -948,12 +978,11 @@ class TestEconomy(unittest.TestCase):
 def single_test():
     TE = TestEconomy()
     #TE.test_get_relevant_orders()
-    TE.test_transaction_sum()
-    TE.test_figure_out_most_profitable_product()
+    #TE.test_buy_order()
+    TE.test_sell_order()
     #TE.test_get_manufacturing_price_points_insufficient_orders()
     #TE.test_find_manufacturing_cost()
     #TE.test_find_manufacturing_cost_fail()
-    #TE.test_make_or_buy()
     #TE.test_make_or_buy() 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ class Order:
         self.good = good
         self.price = price
         
+        assert amount > 0
+        
         self.amount = amount
         self.max_amount = amount
         
@@ -1471,7 +1473,8 @@ class Market:
         return "< econmarket >"
     
     def set_up_trader(self,trader):
-        self.traders.append(trader)
+        if trader not in self.traders:
+            self.traders.append(trader)
     
     def flip_order_data_structure(self):
         
@@ -1792,16 +1795,13 @@ class Market:
         if sell_orders:
             personal_goods = customer.wanted_goods
             key = "sell_orders"
-            buyer = customer
-            seller = self
+            
         else:
             personal_goods = customer.offered_goods
             key = "buy_orders"
-            seller = customer
-            buyer = self
         
         for good in personal_goods:
-            if  good in self.orders[key]:
+            if good in self.orders[key]:
                 # should I assume they're sorted? Sure.
                 # cheapest sell order, highest buy order should be top
                 
@@ -1825,6 +1825,14 @@ class Market:
                     best_order = self.orders[key][good][0]
                     trade_amount = personal_goods[good]["amount"]
                     
+                    if sell_orders:
+                        buyer = customer
+                        seller = best_order.creator
+                        
+                    else:
+                        seller = customer
+                        buyer = best_order.creator
+                        
                     # if the order allows me to interact with it.
                     if trade_amount > best_order.minimum_amount:
                         
@@ -1838,16 +1846,25 @@ class Market:
                         
                         payment = trade_amount * best_order.price 
                         
-                        if "money" not in seller.inventory:
-                            seller.inventory["money"]={"amount":0}
-                        if good not in buyer.inventory:
-                            buyer.inventory[good]={"amount":0}
+                        if sell_orders:
+                            buyer.inventory["money"]["amount"] -= payment
+                            if buyer.inventory["money"]["amount"] == 0:
+                                buyer.inventory.pop("money")
+                            
+                            if good not in buyer.inventory:
+                                buyer.inventory[good] = {"amount":0}
+                            buyer.inventory[good]["amount"] += trade_amount
+                            
+                        else:
+                            seller.inventory[good]["amount"] -= trade_amount
+                            if seller.inventory[good]["amount"] == 0:
+                                seller.inventory.pop(good)
+                            
+                            if "money" not in seller.inventory:
+                                seller.inventory["money"]={"amount":0}
+                            
+                            seller.inventory["money"]["amount"]+= payment
                         
-                        buyer.inventory["money"]["amount"] -= payment
-                        seller.inventory["money"]["amount"] += payment
-                        
-                        buyer.inventory[good]["amount"] += trade_amount
-                        seller.inventory[good]["amount"] -= trade_amount
                         
                         # reduce the amount so that the loop will eventually end.
                         personal_goods[good]["amount"]-=trade_amount
@@ -1856,6 +1873,14 @@ class Market:
                         M_t={"good":good,"buyer":buyer,"seller":seller,"amount":trade_amount,"price":best_order.price}
                         
                         self.transactions.append(M_t)
+                        
+                        T_ob = Transaction(None,good,trade_amount,"money",payment,party_a=buyer,party_b=seller)
+                        
+                        buyer.transaction_log.append(T_ob)
+                        buyer.transactions[T_ob.id] = T_ob
+                        seller.transaction_log.append(T_ob)
+                        seller.transactions[T_ob.id] = T_ob
+                        
                         if sell_orders:
                             self.pickup_area.append([best_order.creator,"money",payment])
                         else:

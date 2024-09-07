@@ -160,8 +160,8 @@ class TestEconomy(unittest.TestCase):
         
         amount = 25
         
-        coverage_output  = MyAgent.get_coverage_relevant_orders(E,good_recipe,amount)
-        mpps = MyAgent.get_manufacturing_price_points(coverage_output,good_recipe,amount)
+        price_point_breaks, relevant_orders, requirements_cost  = MyAgent.get_coverage_relevant_orders(E, good_recipe, amount)
+        mpps = MyAgent.get_manufacturing_price_points( relevant_orders, price_point_breaks, good_recipe, amount)
         
         assert mpps[0].amount == 10
         assert mpps[0].price == 2
@@ -224,8 +224,8 @@ class TestEconomy(unittest.TestCase):
         # this is the amount I'm requesting
         amount = 25
         
-        coverage_output  = MyAgent.get_coverage_relevant_orders(E,good_recipe,amount)
-        mpps = MyAgent.get_manufacturing_price_points(coverage_output,good_recipe,amount)
+        price_point_breaks, relevant_orders, requirements_cost  = MyAgent.get_coverage_relevant_orders(E,good_recipe,amount)
+        mpps = MyAgent.get_manufacturing_price_points(relevant_orders, price_point_breaks, good_recipe, amount)
         
         # this is what I can deliver
         assert mpps[0].amount == 5
@@ -297,7 +297,7 @@ class TestEconomy(unittest.TestCase):
         
         coverage_output  = MyAgent.get_coverage_relevant_orders(E,good_recipe,amount)
         
-        all_amount_covered, all_product_amounts_covered, price_point_breaks, relevant_orders, requirements_cost = coverage_output
+        price_point_breaks, relevant_orders, requirements_cost = coverage_output
         my_orders  = relevant_orders
         
         assert my_orders["Water"][0].price == 1
@@ -313,7 +313,21 @@ class TestEconomy(unittest.TestCase):
         assert my_orders["Grain"][1].amount == 10
         assert my_orders["Grain"][2].price == 5
         assert my_orders["Grain"][2].amount == 10
+    
+    
+    def test_trade_splitting(self):
+        """theoretical problem for sawtooth basically, to prevent shortage for things."""
+        MySeller1 = economy.EconomyAgent({"Water":{"amount":50},"Grain":{"amount":50},"money":{"amount":15}})
+        MySeller2 = economy.EconomyAgent({"Water":{"amount":50},"Grain":{"amount":50},"money":{"amount":15}})
         
+        # the problem is if I want to buy and sell large quanitites of stuff, but I have very little money and it would work out
+        # with bartering, but not if you buy and then sell all at once.
+        
+        # solution : sell first then buy -> no liquidity problem.
+        # also put in limit for lots of small trades.
+        
+        a = 1
+    
     def test_make_or_buy(self):
                 
         MyAgent = economy.EconomyAgent()
@@ -406,7 +420,77 @@ class TestEconomy(unittest.TestCase):
         # can't make any for any price.
         assert r == (0, [], 0)
 
-    def test_find_manufacturing_cost(self):
+    def test_find_manufacturing_cost_stocks_prices(self):
+        
+        MyAgent = economy.EconomyAgent()
+        
+        MyAgent.inventory = {
+                            "Water":{"amount":50},
+                            "Grain":{"amount":50},
+                            }
+                            
+        MyAgent.prices = {
+                         "Water":1,
+                         "Grain":0.8,
+                         }
+        
+        E = economy.EconomyEnvironment()
+        
+        materials, products, recipies = crafting.default()
+        
+        bread_recipe = recipies["Bread"]
+        
+        r = MyAgent.find_manufacturing_cost(E,bread_recipe,27,requirements_stocks=MyAgent.inventory)
+        
+        something, pricepoints = r
+        
+        assert len(pricepoints) == 1
+        assert pricepoints[0].price == 1.8
+        
+        
+    def test_find_manufacturing_cost_order_stock_mix(self):
+        MyAgent = economy.EconomyAgent()
+        
+        MyAgent.inventory = {"Grain":{"amount":100}}
+        MyAgent.prices = {"Grain":1}
+        
+        MySeller1 = economy.EconomyAgent({"Water":{"amount":100}})
+        E = economy.EconomyEnvironment()
+        
+        
+        M1 = economy.Market((0,0,0),)
+        
+        # the first 5 at 1, the next 10, for a sum of 15, at 2
+        # and then the next 20 at a price of 3. for a total of 35
+        
+        O11 = economy.Order("Water",price=1,amount=5,creator=MySeller1,sell=True)
+        O12 = economy.Order("Water",price=2,amount=10,creator=MySeller1,sell=True)
+        O13 = economy.Order("Water",price=3,amount=20,creator=MySeller1,sell=True)
+        M1.put_order(O11,MySeller1,sell=True)
+        M1.put_order(O12,MySeller1,sell=True)
+        M1.put_order(O13,MySeller1,sell=True)
+        
+        
+        E.locations[M1.id] = M1
+        
+        materials, products, recipies = crafting.default()
+        
+        bread_recipe = recipies["Bread"]
+        
+        r = MyAgent.find_manufacturing_cost(E,bread_recipe,27,requirements_stocks = MyAgent.inventory)
+        
+        total_price, price_points = r
+        assert total_price == 27*1 + 5*1 + 10*2 + 12*3
+        assert total_price == 88
+        assert len(price_points)==3
+        assert price_points[0].amount ==5
+        assert price_points[1].amount ==10
+        assert price_points[2].amount ==12
+        assert price_points[0].price == 2
+        assert price_points[1].price == 3
+        assert price_points[2].price == 4
+    
+    def test_find_manufacturing_cost_orders(self):
         
         MyAgent = economy.EconomyAgent()
         
@@ -458,7 +542,7 @@ class TestEconomy(unittest.TestCase):
         
         r = MyAgent.find_manufacturing_cost(E,bread_recipe,27)
         if r != None:
-            total_cost, pricepoints, asdf2 = r
+            total_cost, pricepoints = r
         
         assert pricepoints[0].amount == 5
         assert pricepoints[0].price == 2.4
@@ -977,14 +1061,13 @@ class TestEconomy(unittest.TestCase):
 
 def single_test():
     TE = TestEconomy()
-    #TE.test_get_relevant_orders()
-    #TE.test_buy_order()
-    TE.test_sell_order()
-    #TE.test_get_manufacturing_price_points_insufficient_orders()
-    #TE.test_find_manufacturing_cost()
-    #TE.test_find_manufacturing_cost_fail()
-    #TE.test_make_or_buy() 
+    
+    TE.test_find_manufacturing_cost_fail()
+    TE.test_find_manufacturing_cost_orders()
+    TE.test_find_manufacturing_cost_stocks_prices()
+    TE.test_find_manufacturing_cost_order_stock_mix()
+    
 
 if __name__ == "__main__":
-    unittest.main()
-    #single_test()
+    #unittest.main()
+    single_test()

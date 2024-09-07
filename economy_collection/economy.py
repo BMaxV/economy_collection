@@ -1,9 +1,29 @@
 import math
 import uuid
+from economy_collection import crafting
+
+class StockedValuedInventory:
+    """
+    When comparing sources of objects, I want to compare 
+    volumes at certain prices, this is for objects that I already have.
+    """
+    def __init__(self, name, price, amount):
+        self.name = name
+        self.price = price
+        self.amount = amount
+    
+    def __repr__(self):
+        return f"<gamedevstuff.economy.StockedValuedInventory {self.name} price:{self.price} n:{self.amount}>"
 
 class ManufacturingPricePoint:
-    def __init__(self, price, amount,recipe):
-        self.requirement_prices = {} # requirement_name : price
+    """
+    This is for comparing things that I don't have but could make
+    at a certain price.
+    """
+    def __init__(self, price, amount,recipe,prices):
+        for x in prices:
+            assert type(x)==str
+        self.requirement_prices = prices # requirement_name : price
         self.price = price
         self.amount = amount
         self.recipe = recipe
@@ -20,6 +40,8 @@ class Order:
     good should be a hashable id, preferably a str(id)
     can be text for testing though.
     
+    this is also used to compare sources of items
+    at volume and price.
     """
     def __init__(self,good,price,amount,creator,sell=True,creation_time=None,minimum_amount=1):
         
@@ -728,7 +750,9 @@ class EconomyAgent:
         
         # this is for comparing general categories and 
         # different products
+        
         self.manufacturing_price_point_cache = {}
+        self.sell_order_cache = {}
         
         # didn't have a positon? what?
         self.pos = (0,0,0)
@@ -809,43 +833,46 @@ class EconomyAgent:
         return self.dists[0][1]
     
     
-    def get_stocks_prices(self,good_recipe,requirements_stocks,env):
+    def get_stocks_prices(self, good_recipe, requirements_stocks, env,amount):
+        
+        # this doesn't really make sense by default but it does make sense
+        # to set different prices for different amounts of stuff that you have.
+        # selling your shirts for 1$ but selling your last shirt for 10$
+        
+        price_point_breaks = []
         stocks_prices = {}
+        
         for x in good_recipe.requirements:
-            if x in requirements_stocks and x in env.avg_prices:
-                stocks_prices[x] =  env.avg_prices[x]
+            if x in requirements_stocks and x in self.prices:
+                if x not in stocks_prices:
+                    stocks_prices[x] = []
+                
+                # see comment above, don't remove, I may want to use this later.
+                next_price = float("inf")
+                        
+                amount_I_can_cover = requirements_stocks[x]["amount"] / good_recipe.requirements[x]
             
-            elif x in requirements_stocks and x not in env.arg_prices:
-                # can't really evaluate it, specify a custom price
-                # to assume stuff.
-                # and I can't really automate this, which is bad for...
-                # AI
-                
-                if x in custom_set_values:
-                    a = 1
-                #else:
-                # give UI feedback to define some custom prices.
-                # or guess.
-                
-                a = 1
-            elif x not in requirements_stocks:
-                continue
-        return stocks_prices
+                break_point = (amount_I_can_cover, x, next_price)
+                price_point_breaks.append(break_point)
+                    
+                Value = StockedValuedInventory(x,self.prices[x],requirements_stocks[x]["amount"])
+                stocks_prices[x].append(Value)
+        
+        return price_point_breaks, stocks_prices
     
     def get_coverage_relevant_orders(self, env, good_recipe, amount):
         """
         filter my market environemnt for relevant sell orders for ingredients
         for my the recipe and the amount
         """
-        all_amount_covered = []
-        all_product_amounts_covered = []
+        
         price_point_breaks = []
         relevant_orders = {}
         requirements_cost = 0
         
         for req in good_recipe.requirements:
             product_amount_covered = 0
-            cheapest_sellers = self.find_cheapest_seller(env,req.name,amount)
+            cheapest_sellers = self.find_cheapest_seller(env,req,amount)
             
             if cheapest_sellers == None:
                 continue
@@ -892,16 +919,30 @@ class EconomyAgent:
                         price_point_breaks.append(break_point)
                         
                     order_counter += 1
-                
-                product_amount_covered = req_met / good_recipe.requirements[req]
-                all_product_amounts_covered.append(product_amount_covered)
-                
-            relevant_orders[req.name] = cheapest_sellers
+                                
+            relevant_orders[req] = cheapest_sellers
         
         price_point_breaks.sort(key= lambda x :x[0])
                 
-        return all_amount_covered, all_product_amounts_covered, price_point_breaks, relevant_orders, requirements_cost
-        
+        return price_point_breaks, relevant_orders, requirements_cost
+    
+    def merge_orders_stocks(self,stocks_prices,relevant_orders):
+        relevant_valued_objects = {}
+        for x in relevant_orders:
+            if x not in relevant_valued_objects:
+                relevant_valued_objects[x] = []
+            relevant_valued_objects[x] += relevant_orders[x]
+            
+        for x in stocks_prices:
+            if x not in relevant_valued_objects:
+                relevant_valued_objects[x] = []
+            relevant_valued_objects[x] += stocks_prices[x]
+            
+        for x1 in relevant_valued_objects:
+            relevant_valued_objects[x1].sort(key= lambda x :x.price)
+            
+        return relevant_valued_objects
+    
     def find_manufacturing_cost(self, env, good_recipe, amount = 1, requirements_stocks = None, custom_set_values = None):
         """
         This is a function, that wants to phrase manufacturing costs
@@ -926,6 +967,9 @@ class EconomyAgent:
         10/5 = 2 average.
         
         Does this have a false?
+        
+        either I get ingredient prices from orders or from what
+        I have and the prices I set for that.
         """
         make_p, manufacturing_price_points, amount_covered = 0,[],0
         #for requirements
@@ -934,31 +978,33 @@ class EconomyAgent:
             
         requirements_cost = 0
         
-        stocks_prices  = self.get_stocks_prices(good_recipe, requirements_stocks, env)
+        stocks_breakpoints,stocks_prices  = self.get_stocks_prices(good_recipe, requirements_stocks, env, amount)
         
-        # whenever 
+        # sometimes this can be empty.
         output = self.get_coverage_relevant_orders(env, good_recipe, amount)
+                
+        order_breakpoints, relevant_orders, requirements_cost = output
         
-        if output == None:
+        break_points = order_breakpoints + stocks_breakpoints
+        
+        relevant_valued_objects = self.merge_orders_stocks(stocks_prices, relevant_orders)
+        
+        if break_points == []:
+            
+            # there are no orders feeding into this.
+            # I can use only what I have.
+            
             return make_p, manufacturing_price_points, amount_covered
         
-        all_amount_covered, all_product_amounts_covered, price_point_breaks, relevant_orders, requirements_cost = output
         
-        manufacturing_price_points = self.get_manufacturing_price_points(output, good_recipe, amount)
-        
-        if len(all_product_amounts_covered) > 0:
-            amount_covered = min(all_product_amounts_covered)
-        else:
-            amount_covered = 0
-        
-        
+        manufacturing_price_points = self.get_manufacturing_price_points(relevant_valued_objects, break_points, good_recipe, amount)
         
         # the cost is probably wrong.
         total_cost = requirements_cost + good_recipe.make_process_cost
         
         total_cost = self.calculate_cost_from_price_points(manufacturing_price_points, amount)
     
-        return total_cost, manufacturing_price_points, amount_covered
+        return total_cost, manufacturing_price_points
     
     def calculate_cost_from_price_points(self, manufacturing_price_points, amount):
         
@@ -980,7 +1026,7 @@ class EconomyAgent:
         
         return total_price
     
-    def get_manufacturing_price_points(self,coverage_output,good_recipe,amount):
+    def get_manufacturing_price_points(self, relevant_objects, price_point_breaks, good_recipe, amount):
         """
         the point of this function is to create an equivalent to market orders, for manufacturing.
         
@@ -998,26 +1044,40 @@ class EconomyAgent:
         product volumes with prices:
         |-||-||-|
         
+        there are two ways to do prices.
+        either, I look at all ingredient market orders and use those
+        or I use a predefined set of prices.
+        
         """
-        all_amount_covered, all_product_amounts_covered, price_point_breaks, relevant_orders, requirements_cost = coverage_output
+        
         manufacturing_price_points = []
         
+        # make sure I have everything I need to even begin calculating things.
         for req in good_recipe.requirements:
-            if req.name not in relevant_orders:
+            
+            have_orders = req in relevant_objects
+            
+            if not req in relevant_objects:
                 return []
-            elif len(relevant_orders[req.name])==0:
+            
+            if not len(relevant_objects[req]) > 0:
+                return []
+            
+            elif len(relevant_objects[req])==0:
                 return []
         
         if amount > 1:
             base_price = 0
+            
+            # either I get my prices from the orders or I just assume
             prices = {}
             total_number = 0
             
             # so I have a price dict.
             # and I'm updating the price dict. at the breakpoints.
-            
             for req in good_recipe.requirements:
-                price = relevant_orders[req.name][0].price
+                price = relevant_objects[req][0].price
+                assert price != float("inf")
                 prices[req] = price * good_recipe.requirements[req]
             
             old_number = 0
@@ -1033,14 +1093,25 @@ class EconomyAgent:
                 
                 old_number = new_number
                 price = 0
-                for ingredient_name in prices:
-                    price += prices[ingredient_name] * good_recipe.requirements[ingredient_name]
+                for ingredient in good_recipe.requirements:
+                    price += prices[ingredient] * good_recipe.requirements[ingredient ]
                                 
-                MPP = ManufacturingPricePoint(price,product_diff,recipe=good_recipe)
+                MPP = ManufacturingPricePoint(price,product_diff,recipe=good_recipe,prices=prices)
                 manufacturing_price_points.append(MPP)
                 prices[req] = next_price
                 
                 total_number += product_diff
+                
+                if next_price == float("inf"):
+                    # this is something I'm doing 
+                    # because of stocks, there is no real next price
+                    # offer, and I need stop, but I still want the
+                    # same datastructure to calculate volumes
+                    # and I want to mix it and make it comparable with
+                    # the market stuff.
+                    
+                    break
+                
                 if total_number > amount:
                     break
                 if next_price == None:
@@ -1253,8 +1324,53 @@ class EconomyAgent:
         
         return 
     
+    def make_or_buy_option_space(self, needed, local_compare_group, recipes, econ_env):
+        """
+        ok, so with groups and specific stuff, 
+        
+        so what I actually want is to test my needs against all 
+        possible options that could meet it and then pick the cheapest.
+        or otherwise best via a different evaluation function
+        or metric.
+        
+        the make or buy fills my cache?
+        """
+        fake_needs = {}
+        
+        for specific_product in local_compare_group:
+            if specific_product in crafting.groups:
+                if specific_product in needed:
+                    for part_name in crafting.groups[specific_product]:
+                        if part_name in local_compare_group:
+                            if part_name not in fake_needs:
+                                fake_needs[part_name] = 0
+                            fake_needs[part_name] +=  needed[specific_product]
+                            
+            else:           
+                if specific_product in needed:
+                    if specific_product not in fake_needs:
+                        fake_needs[specific_product] = 0
+                    fake_needs[specific_product] += needed[specific_product]
+                    
+        for specific_product in local_compare_group:
+            if specific_product not in fake_needs:
+                continue
+            if specific_product not in recipes:
+                continue
+            
+            recipe = recipes[specific_product]
+            
+            # also I don't need to decide make or buy at every tick.
+            # I can cache this. for this object, for x time.
+            amount = fake_needs[specific_product]
+            
+            # I can't use this directly, because it's basically
+            # my option space that I'm navigating.
+            
+            self.make_or_buy(econ_env, recipe, amount = amount)
+           
     
-    def make_or_buy(self, env, good_recipe, amount = 1, historical_price_data = None):
+    def make_or_buy(self, env, good_recipe, amount = 1, historical_price_data = None, just_cache=False):
         """
         Ok, so actually, I would prefer to build a flow chart
         put weights and costs on there and evaluate whether
@@ -1282,17 +1398,31 @@ class EconomyAgent:
         # is preferable.
         
         price_list = []
-        if amount == None:
-            buy_p = self.find_cheapest_seller(env, good_recipe.name)
+        
+        if good_recipe.name not in self.sell_order_cache:
+            if amount == None:
+                price_list = self.find_cheapest_seller(env, good_recipe.name)
+            else:
+                price_list = self.find_cheapest_seller(env,good_recipe.name,amount)
+            self.sell_order_cache[good_recipe.name] = price_list
         else:
-            price_list = self.find_cheapest_seller(env,good_recipe.name,amount)
+            price_list = self.sell_order_cache[good_recipe.name]
             
-        r = self.find_manufacturing_cost(env, good_recipe, amount)
+        if good_recipe.name not in self.manufacturing_price_point_cache:
+            m_cost = self.find_manufacturing_cost(env, good_recipe, amount)
+            self.manufacturing_price_point_cache[good_recipe.name] = m_cost 
+        else:
+            m_cost = self.manufacturing_price_point_cache[good_recipe.name]
         
-        make_p, manufacturing_price_points, amount_covered = r 
+        make_p, manufacturing_price_points = m_cost
+        if not just_cache:
+            r= self.make_or_buy_analysis(price_list,manufacturing_price_points,amount)
+            return r
+    def make_or_buy_analysis(self, price_list, manufacturing_price_points, amount):
+        """
+        separating data collection and analysis.
+        """
         
-        self.manufacturing_price_point_cache[good_recipe.name] = manufacturing_price_points
-                
         amount_bought = 0
         amount_made = 0
         
@@ -1323,9 +1453,7 @@ class EconomyAgent:
                 
                 elif sale_offer.price > price_point.price and can_manufacture:
                     amount_made += price_point.amount
-                    
                     total_make_cost += price_point.price * price_point.amount
-                    
                     manufacturing_price_point_index += 1
                 
                 can_manufacture = manufacturing_price_point_index < len( manufacturing_price_points)
@@ -1783,8 +1911,9 @@ class Market:
                 else:
                     break
     
-    def customer_order_interaction(self,customer,sell_orders=True,verbose=False):
-        """the key is to not think about the orders as sell or buy
+    def customer_order_interaction(self, customer, sell_orders=True, verbose=False):
+        """
+        the key is to not think about the orders as sell or buy
         there is always a "sell" happening, the difference is
         who buyer and seller are.
         
@@ -1806,40 +1935,43 @@ class Market:
                 # cheapest sell order, highest buy order should be top
                 
                 # while I want to buy or sell things.
-                while personal_goods[good]["amount"] > 0 :
+                c = 0
+                while personal_goods[good]["amount"] > 0:
                     
-                    if good not in self.orders[key]:
-                        break
-                    
-                    if sell_orders:
-                        offered_good = "money"
-                        received_good = good
+                    c+=1
+                    if c> 1000:
+                        raise ValueError("Nasa error")
                         
-                    else:
-                        offered_good = good
-                        received_good = "money"
-                    
-                    if customer.inventory[offered_good]["amount"] <= 0:
+                    if good not in self.orders[key]:
                         break
                     
                     best_order = self.orders[key][good][0]
                     trade_amount = personal_goods[good]["amount"]
-                    
+                     
                     if sell_orders:
+                        offered_good = "money"
+                        received_good = good
                         buyer = customer
                         seller = best_order.creator
                         
                     else:
+                        offered_good = good
+                        received_good = "money"
                         seller = customer
                         buyer = best_order.creator
-                        
+                                        
+                                           
                     # if the order allows me to interact with it.
-                    if trade_amount > best_order.minimum_amount:
+                    if trade_amount >= best_order.minimum_amount:
                         
                         # cap the trade amount to how much money is
                         # available and how much is remaining in the order.
-                        if trade_amount * best_order.price > buyer.inventory["money"]["amount"]:
-                            trade_amount = buyer.inventory["money"]["amount"].__floordiv__(best_order.price)
+                        
+                        if sell_orders:
+                            # this is wrong, I shouldn't check directly for how much money the buyer has right now.
+                            # if it's about buy orders.
+                            if trade_amount * best_order.price > buyer.inventory["money"]["amount"]:
+                                trade_amount = buyer.inventory["money"]["amount"].__floordiv__(best_order.price)
                             
                         if trade_amount > best_order.amount:
                             trade_amount = best_order.amount
@@ -1855,22 +1987,25 @@ class Market:
                                 buyer.inventory[good] = {"amount":0}
                             buyer.inventory[good]["amount"] += trade_amount
                             
+                            self.pickup_area.append([best_order.creator,"money",payment])
+                            
                         else:
                             seller.inventory[good]["amount"] -= trade_amount
                             if seller.inventory[good]["amount"] == 0:
                                 seller.inventory.pop(good)
                             
                             if "money" not in seller.inventory:
-                                seller.inventory["money"]={"amount":0}
+                                seller.inventory["money"] = {"amount":0}
                             
-                            seller.inventory["money"]["amount"]+= payment
-                        
+                            seller.inventory["money"]["amount"] += payment
+                            
+                            self.pickup_area.append([best_order.creator,good,trade_amount])
                         
                         # reduce the amount so that the loop will eventually end.
-                        personal_goods[good]["amount"]-=trade_amount
+                        personal_goods[good]["amount"] -= trade_amount
                         best_order.amount -= trade_amount
                         
-                        M_t={"good":good,"buyer":buyer,"seller":seller,"amount":trade_amount,"price":best_order.price}
+                        M_t = {"good":good,"buyer":buyer,"seller":seller,"amount":trade_amount,"price":best_order.price}
                         
                         self.transactions.append(M_t)
                         
@@ -1881,17 +2016,12 @@ class Market:
                         seller.transaction_log.append(T_ob)
                         seller.transactions[T_ob.id] = T_ob
                         
-                        if sell_orders:
-                            self.pickup_area.append([best_order.creator,"money",payment])
-                        else:
-                            self.pickup_area.append([best_order.creator,good,trade_amount])
-                        
                         if self.orders[key][good][0].amount==0:
                             self.orders[key][good].pop(0)
                             if len(self.orders[key][good])==0:
                                 self.orders[key].pop(good)
-                        
-     
+                   
+                    
     def let_pick_up(self,customer):
         
         rml=[]

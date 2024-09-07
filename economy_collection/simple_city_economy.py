@@ -82,13 +82,20 @@ class city:
         
         # this is actually stuff that belongs in a different object.
         # like a "production location".
-        self.production = {} # produced stuff 
+        self.production = {} # produced stuff
+        
+        # this is how much I plan to produce.
         self.production_plan = {}
         self.raw_materials_required = {}
         
+        # this is the list of order objects I plan to buy from.
+        self.buy_plan = {}
+        # this is the actual number of stuff that I need to buy.
+        self.buy_plan_numbers = {}
         
         self.inventory = inventory # goes here
-        self.consumption = {} # this is what is being subtracted.
+        self.demand = {} # this is what is being subtracted.
+        self.consumption_plan = {} # what am I actually going to consumed, based on demand.
         
         # this will be collection of recipes owned by the citizens.
         # or rather, "in memory"
@@ -140,9 +147,6 @@ class city:
             
             }
 
-        
-    
-    
     def secession_desire_tick(self):
         
         # why would you want to secede?
@@ -178,34 +182,76 @@ class city:
         a = 1
     
     def consumption_tick(self):
-        for key in self.consumption:
-            
-            # hmmmmmm. this needs the group thing again
-            # and it might be wise to integrate the rest of
-            # the planning into my consumption plan
-            # and then do a double check.
-            # building a new dict here for specific amounts and goods
-            # and reducing my plan according to the items I picked.
-            
-            # so, "bread" would tick down "food" and 
-            # but tick up my actual consumtion
-            # and then I would subtract from my inventory.
-            
-            self.inventory[key]["amount"] -= self.consumption[key]["amount"]
+        """
+        this needs the group thing again
+        and it might be wise to integrate the rest of
+        the planning into my consumption plan
+        and then do a double check.
+        building a new dict here for specific amounts and goods
+        and reducing my plan according to the items I picked.
         
-    def consumption_planning(self):
+        so, "bread" would tick down "food" and 
+        but tick up my actual consumption
+        and then I would subtract from my inventory.
+        
+        right... Uhm... I buy based stuff on demand, but I'm not planning for that to be...
+        consumed when I do? because the consumption plan is based on what I already have,
+        not on what I am making and producing.
+        
+        This should function should be independent of how I planned to do things.
+        I should consume from what I have, regardless of the source.
+        
+        the current setup works via magic numbers. I haven't actually solved the issue.
+        
+        """
+        
+        unmet_demand = {}
+        
+        # meet generic demands.
+        #for key in self.demand:
+            #if key in crafting.groups:
+                #self.inventory[key]["amount"] -= self.consumption_plan[key]
+        # meet specific demands
+        
+        for key in self.demand:
+            #for gn in crafting.groups:
+                #group = crafting.grous[gn]
+                #if key in group:
+                    #break
+            #if key not in crafting.groups:
+            self.inventory[key]["amount"] -= self.demand[key]["amount"]
+        
+        
+        return unmet_demand
+        
+    def demand_planning(self):
         """
         the consumption over here is reliable, this will be consumed
         at the end of the tick.
         """
-        self.consumption["Food"] = {"amount" : self.population}
-        self.consumption["Consumer Goods"] = {"amount" : self.population}
+        self.demand["Food"] = {"amount" : self.population}
+        self.demand["Consumer Goods"] = {"amount" : self.population}
     
-    def find_possible_products(self, unknown_name, compare_groups):
+    def find_possible_products(self, unknown_name):
         """
         this feels redundant.
         why am I doing this here and not in the economy.
+        
+        this builds my compare group
+        
+        there is a difference between the group of products that
+        I want to compare over all (where I'm fine with just buying)
+        and the group that I can actually make too, which is subset.
+        
+        local_compare_group is everything, including the groupname
+        possible_products is specifically the things I can make, without the groupname.
+        
+        but know_how_d is the dict, where the groupname is also true
+        if any member of the group can be made.
+        
         """
+        local_compare_group = []
+        
         know_how_d = {}
         possible_products = set()
         if unknown_name in crafting.groups:
@@ -217,7 +263,7 @@ class city:
             possible_products = all_group_members.intersection(know_how)
             
             this_group_list = [groupname] + list(all_group_members)
-            compare_groups[groupname] = this_group_list
+            local_compare_group = this_group_list
             
             if len(possible_products) == 0:
                 know_how_d[groupname] = False
@@ -229,115 +275,200 @@ class city:
         else:
             product_name = unknown_name
             if product_name not in self.recipes:
-                know_how_d[product_name]=False
+                know_how_d[product_name] = False
+                # if I can't make it I probably want 
+                # to add it into the buy plan anyway.
             else:
                 possible_products = set()
                 possible_products.add(product_name)
+            
+            #... it's just one.
+            local_compare_group = [unknown_name]
         
-        return possible_products, know_how_d
+        return local_compare_group, possible_products, know_how_d
     
+    
+    def demand_based_actual_needs(self):
+        """
+        I have the group "any" vs. specific problem again.
+        let's assume it's "any" for now.
         
+        generic and specific objects?
+        
+        consumption is top down and I'm checking if I can do a
+        
+        bottom up sum that meets that demand.
+        
+        with a specical exception for if I actually have "generic objects".
+        which I should also do, because it saves computations.
+        
+        
+        how do I interpret my consumtion needs?
+        I think interpret them as additions.
+        
+        people wouldn't say "I want some food, and it has to be a pizza"
+        
+        ----------
+        
+        this should be a general economy thing.
+        """
+        
+        # if my specific needs have leftovers
+        # I can use those to fill general needs,
+        # otherwise don't do that.
+        # I don't want to fill the generic stuff first.
+        
+        needed, specific_leftovers =  self.build_basic_needed_and_leftovers()
+        self.update_generic_needs_with_leftovers(needed, specific_leftovers)
+        
+        self.needed = needed
+        return needed
+    
+    def update_generic_needs_with_leftovers(self,needed,specific_leftovers):
+        # update generic needs with specific inventory stuff,
+        # if available.
+        
+        for gn in crafting.groups:
+            if gn in needed:
+                for specific_name in crafting.groups[gn]:
+                    if specific_name in specific_leftovers or specific_name in self.inventory:
+                        
+                        # that's good, I can subtract that.
+                        if specific_name not in specific_leftovers:
+                            amount = self.inventory[specific_name]["amount"]
+                        else:
+                            amount = specific_leftovers[specific_name]
+                        needed_there = needed[gn]
+                        
+                        if needed_there >= amount:
+                            met = amount
+                            left_over = 0
+                        else:
+                            met = needed_there
+                            left_over = amount - needed_there
+                        
+                        specific_leftovers[specific_name] = left_over
+                        needed[gn] -= met
+                        if needed[gn]==0:
+                            needed.pop(gn)
+        
+        return needed
+    
+    def build_basic_needed_and_leftovers(self):
+        specific_leftovers = {}
+        needed = {}
+        for x in self.demand:
+            
+            # first of all, check if it's specific or generic.
+            
+            if x in crafting.groups:
+                # it's generic.
+                
+                # do I have generic objects that meet this?
+                if x in self.inventory:
+                    if self.inventory[x]["amount"]>= self.demand[x]["amount"]:
+                        self.consumption_plan[x] = self.demand[x]["amount"]
+                        
+                    else:
+                        # make something generic or anything specific.
+                        # and also check if specific stuff meets this.
+                        needed[x] = self.demand[x]["amount"] - self.inventory[x]["amount"]
+                        self.consumption_plan[x] = self.inventory[x]["amount"]
+            else:
+                # it's specific.
+                if x in self.inventory:
+                    if self.inventory[x]["amount"] >= self.demand[x]["amount"]:
+                        left_over = self.inventory[x]["amount"] - self.demand[x]["amount"]
+                        if left_over > 0:
+                            specific_leftovers[x] = left_over
+                            
+                        self.consumption_plan[x] = self.demand[x]["amount"]
+                    else:
+                        needed[x] = self.demand[x]["amount"] - self.inventory[x]["amount"]
+                        self.consumption_plan[x] = self.inventory[x]["amount"]
+                        
+        return needed, specific_leftovers
+    
         # these are not the same.
     def production_planning(self,economic_environment=None):
         """
+        What's the purpose here.
         
+        I know I have certain needs and I need to figure out if
+        I can make the stuff to fulfill them, how, how much it would 
+        cost, what the best options are.
+        
+        There are groups, actually, not specific things.
+        and the needs are group based needs, not specific based.
+        
+        I am building complete lists of make or buy price points 
+        and then I am choosing the cheapest options to fulfil the group
+        needs.
+        
+        To compare a product, I need to have the other market data
+        available and I need to compare what's being offered
+        with what I can do.
         """
+        
         self.planned_raw_material = {}
         self.planned_production_output = {}
-        # do i do replacement?
+        
         for x in self.resources:
             self.planned_raw_material[x] = self.resources[x]["occupied"]
+        
+        econ_env = economic_environment
         
         production_plan = {}
         buy_plan = {}
         know_how_d = {}
         
-        
-        # this requires a little bit more thinking about...
-        # groups and categories.
-        
-        # so, if I need any one thing from group x
-        # any one thing from group x should meet the need.
-        # and tick my box.
-        
-        
-        
-        # so these are groups, actually, not specific things.
-        # and actually I need to figure which products that I can
-        # make, meet the needs that I have.
-        
         compare_list = []
         compare_groups = {}
-        
-        print(self.consumption)
-        for unknown_name in self.consumption:
-            # this is multilayered, I shouldn't do this when I build
-            # the basic steps.
-            # so, I shouldn't consume "Food" I should consume "Bread", because that fits better with my 
-            # setup for crafting right now.
-            # "Food" is the statistic generalization?... 
-            
-            # but I can't switch if I do that.
-            
-            # this feels like overthinking.
-            # this needs to be more complicated in the future, but
-            # not right now.
-            
-            possible_products, know_how_d = self.find_possible_products(unknown_name, compare_groups)
-            
-            econ_env = economic_environment
-            self.variation_make_or_buy(possible_products,know_how_d,econ_env)
-            
-            print(unknown_name)
-        
-            # so to compare this, I need to have the other market data available
-            # and I need to compare what's being offered
-            # with what I can do.
-            
-            # and only if the thing that I can do is a good solution
-            # for that, do I want to actually buy the ingredients and
-            # make the thing.
-            
-            #production_plan.update(r)
-        
-        # I probably want
-        # for the group question
-        # I probably want to throw all possible
-        # goods into one big list, sort by price and then get the cheapest stuff?
-        for group_name in compare_groups:
-            group_list = compare_groups[group_name]
-            if economic_environment == None:
-                continue
-            
-            econ_env = economic_environment
-            full_offer_group_list = self.make_full_offer_group_list(group_list, econ_env)
-            
-        
-            
-            value = self.consumption[group_name]["amount"]
-            
-            counter = 0
-            index = 0
-            total_price = 0
-            relevant_objects = []
-            
-            while counter < value:
-                my_object = full_offer_group_list[index]
+        possible_products = []
                 
-                relevant_objects.append(my_object)
-                counter += my_object.amount
-                total_price = my_object.price
-                index += 1
+        # I'm doing this wrong.
+        # I want to do a top down thing for the needs
+        # then I want to a bottom up process for what I can make
+        # and then I sum up and compare.
+        
+        # I'm not going by need at all. is that right?
+        # can prefilter? probably.
+        for unknown_name in self.needed:
+            local_compare_group, possible_products, know_how_d = self.find_possible_products(unknown_name)
+            compare_groups[unknown_name] = local_compare_group
             
-            # and then... I want only the manufacturing price points
-            # that I have selected here to be used in my production plan
-            # and I also want to translate the sell orders that I'm finding
-            # here into my buy plan.
+            # either... I can make stuff that fulfills it
+            if know_how_d[unknown_name] == True:
+                self.econ_agent.make_or_buy_option_space(self.needed, local_compare_group, self.recipes, econ_env)
+            
+            else: # or I HAVE TO buy it.
+                self.buy_plan_numbers[unknown_name] = self.needed[unknown_name]
+                
+        for group_name in compare_groups:
+            if economic_environment == None:
+                break
+            group_list = compare_groups[group_name]
+            
+            # I already did this.
+            full_offer_group_list = self.make_full_offer_group_list(group_list, econ_env)
+        
+            relevant_objects = self.filter_relevant_objects(full_offer_group_list, group_name)
+            
             self.add_to_procurement_plans(relevant_objects,production_plan,buy_plan)
-        
-        
+            
+            # reduce the needed amount by how much I'm making or planning to buy.
+            for x in relevant_objects:
+                self.needed[group_name] -= x.amount
+                if self.needed[group_name] <= 0:
+                    self.needed.pop(group_name)
+            
         self.production_plan = production_plan
         self.buy_plan = buy_plan
+        
+        print("production_plan",production_plan)
+        print("buyplan",buy_plan)
+        
+        return
         
         if False: # notes.
         #for x in self.production:
@@ -373,35 +504,47 @@ class city:
             # I need to procure an amount X.
             a=1
     
-    def variation_make_or_buy(self,possible_products,know_how_d, econ_env):
+    def filter_relevant_objects(self,full_offer_group_list,group_name):
         """
-        ok, so with groups and specific stuff, 
-        
-        so what I actually want is to test my needs against all 
-        possible options that could meet it and then pick the cheapest.
-        or otherwise best via a different evaluation function
-        or metric.
-        
-        the make or buy fills my cache?
+        filter what's available with my need
         """
-        fake_needs = {}
-        for group_name in crafting.groups:
-            if group_name in self.consumption:
-                for product_name in crafting.groups[group_name]:
-                    if product_name in possible_products:
-                        fake_needs[product_name] = self.consumption[group_name]
         
-        for specific_product in possible_products:
-            recipe = self.recipes[specific_product]
+        value = self.needed[group_name]
+        
+        counter = 0
+        index = 0
+        total_price = 0
+        relevant_objects = []
+        
+        
+        while counter < value:
+            my_object = full_offer_group_list[index]
             
-            # also I don't need to decide make or buy at every tick.
-            # I can cache this. for this object, for x time.
-            amount = fake_needs[specific_product]["amount"]
-            self.econ_agent.make_or_buy(econ_env, recipe, amount = amount)
-           
+            relevant_objects.append(my_object)
+            
+            if "Order" in str(type(my_object)):
+                if my_object.good not in self.buy_plan_numbers:
+                    self.buy_plan_numbers[my_object.good] = 0
+                    
+                if counter+my_object.amount > value:
+                    add_diff = value - counter
+                else:
+                    add_diff = my_object.amount
+                
+                #self.buy_plan_numbers[my_object.good] += add_diff
+            
+            counter += my_object.amount
+            
+            index += 1
+        
+        return relevant_objects
+    
     
     def make_full_offer_group_list(self,group_list,econ_env):
-        
+        """
+        get make or buy result data, from the environment or
+        my cache, for the entire product group.
+        """
         full_offer_group_list = []
         
         for good_name in group_list:
@@ -409,23 +552,36 @@ class city:
             full_offer_group_list += offers
             if good_name in self.econ_agent.manufacturing_price_point_cache:
                 mpps = self.econ_agent.manufacturing_price_point_cache[good_name]
-                full_offer_group_list += mpps
                 
-                
+                full_offer_group_list += mpps[1]
+                        
         full_offer_group_list.sort(key=lambda x : x.price)
         return full_offer_group_list
     
     def add_to_procurement_plans(self,relevant_objects,production_plan,buy_plan):
+        """
+        I want only the manufacturing price points
+        that I have selected here to be used in my production plan
+        and I also want to translate the sell orders that I'm finding
+        here into my buy plan.
+        
+        I can't run these idependently.
+        
+        and I'm not guaranteed to be able to do it either. particularly
+        not the buying. hmmmm.
+        
+        I am not properly tracking what I want to buy...
+        
+        """
+        
         for my_object in relevant_objects:
             if "Manufac" in str(type(my_object)):
-                # do this
                 name = my_object.recipe.name
                 if name not in production_plan:
                     production_plan[name] = []
                 production_plan[name].append(my_object)
                 
             if "Order" in str(type(my_object)):
-                # do that.
                 if my_object.good not in buy_plan:
                     buy_plan[my_object.good] = []
                 buy_plan[my_object.good].append(my_object)
@@ -433,8 +589,8 @@ class city:
     def market_interaction_planning(self):
         # make or buy is nice, just buy
         
-        for x in self.consumption:
-            a = self.consumption[x]["amount"]
+        for x in self.needed:
+            a = self.needed[x]
             b = self.inventory[x]["amount"]
             
             c = 0
@@ -443,9 +599,12 @@ class city:
                     c += myob.amount
             
             d = 0 
-            if x in self.buy_plan:
-                for myob in self.buy_plan[x]:
+            if x in self.buy_plan and x in self.buy_plan_numbers:
+                lc =0 
+                while d < self.buy_plan_numbers[x] and lc < len(self.buy_plan[x]):
+                    my_ob = self.buy_plan[x][lc]
                     d += myob.amount
+                    lc+=1
             
             diff = max(a -(b+c+d),0)
             
@@ -459,8 +618,11 @@ class city:
             if name not in self.buy_plan:
                 self.buy_plan[name] = {"amount":0}
             self.buy_plan[name] += self.raw_materials_required[name]
-            
-        self.econ_agent.wanted_goods = self.buy_plan
+        
+        # buy plan was where to buy from.
+        
+        for x in self.buy_plan_numbers:
+            self.econ_agent.wanted_goods[x]={"amount":self.buy_plan_numbers[x]}#self.buy_plan
         
     def production_tick(self, delta_t):
         """
@@ -513,57 +675,113 @@ class city:
     def selling_planning_tick(self):
         
         rest = {}
-        for trade_good_name in  self.inventory:
+        for trade_good_name in self.inventory:
             
             # if I need some, don't sell what I need,
-            if trade_good_name in self.consumption:
-                diff =  self.inventory[trade_good_name]["amount"] - self.consumption[trade_good_name]["amount"]
+            if trade_good_name in self.consumption_plan:
+                diff =  self.inventory[trade_good_name]["amount"] - self.consumption_plan[trade_good_name]
                 if diff > 0:
                     rest[trade_good_name] = diff
-        
+            
             # else sell it?
-            else:
+            elif self.inventory[trade_good_name]["amount"] > 0:
                 if trade_good_name == "money":
                     continue
                 
                 # with some restrictions later, because I don't want
                 # to sell rare, exclusive stuff that nobody else 
                 # has access to nilly willy.
+                
                 rest[trade_good_name] = self.inventory[trade_good_name]["amount"]
             
         temp_fix_prices = {}
         
         for trade_good_name in rest:
             self.econ_agent.offered_goods[trade_good_name] = {"amount":rest[trade_good_name]}
-            
             if trade_good_name in temp_fix_prices:
                 self.econ_agent.prices[trade_good_name] = temp_fix_prices[trade_good_name]
             else:
                 self.econ_agent.prices[trade_good_name] = 1
     
-            
-    
-    def planning_step(self,delta_t):
+    def planning_step(self,delta_t,econ_env):
         
-        self.consumption_planning()
+        # this is figuring out what I needed.
+        self.demand_planning()
+        self.demand_based_actual_needs()
+        
+        # selling off what I don't need.
         self.selling_planning_tick()
         
+        # figure out what I can make and what I need.        
         self.production_planning()
+        
+        self.ingredient_planning(econ_env)
+        # I need to redo the sell planning, because I can't sell my 
+        # ingredients.
+        
+        # this is setting what I'm actually going to buy.
         self.market_interaction_planning()
         
         # converting distinct food objects into a generalized food category?
         # what's this kind of thing...
-        crafting.sum_objects_by_common_purpose(self.inventory)
-        crafting.sum_objects_by_common_purpose(self.production_plan)
-        
-        
-        
-        # self.pricing_tick()
-        
-        
-        # there is a "can make" step from the crafting(?) that I need.
+        #crafting.sum_objects_by_common_purpose(self.inventory)
+        #crafting.sum_objects_by_common_purpose(self.production_plan)
     
-    def trading_tick(self,environment):
+    def ingredient_planning(self,environment):
+        reqs = set()
+        for name in self.production_plan:
+            print("")
+            print(name)
+            print("")
+            for price_point in self.production_plan[name]:
+                print(price_point)
+                for req in price_point.requirement_prices:
+                    #recipe is basically guaranteed to exist.
+                    
+                    req_amount = price_point.amount * self.recipes[name].requirements[req]
+                    print(req, req_amount)
+                    # if I am selling, I want to reduce it.
+                    if req in self.econ_agent.offered_goods:
+                        self.econ_agent.offered_goods[req] -= req_amount
+                    
+                    elif req in self.econ_agent.orders["sell_orders"]:
+                        
+                        
+                        # cancel / modify sell orders.
+                        # that's not good at all.
+                        # I don't want to create them.
+                        # rather than canceling them.
+                        # but I have to create them for the make_or_buy
+                        
+                        # one of the assumptions is wrong.
+                        # if I need the orders for make or buy planning,
+                        # when I already have the stuff, that's wrong.
+                        # I already have prices "in mind" even without orders
+                        # in practice , in my test, I am defining prices.
+                        # the same would happen in other "in practice" cases.
+                        # then I can make the make_or_buy decision
+                        # without orders and I can delay creating orders
+                        # for ingredients, until I'm sure I don't need the ingredients.
+                        
+                        
+                        print("yo",self.econ_agent.orders["sell_orders"])
+                        a=1
+                    
+                    # else I want to buy this, FIND IT.
+                    else:
+                        if req not in self.buy_plan_numbers:
+                            self.buy_plan_numbers[req] = 0
+                        self.buy_plan_numbers[req] += req_amount
+                    
+                    reqs.add(req)
+        
+        for req in reqs:
+            if req not in self.buy_plan:
+                amount = self.buy_plan_numbers[req]
+                order_list = find_cheapest_seller(environment, req, amount=amount)
+                self.buy_plan[req] = order_list
+                    
+    def trading_tick(self,environment,market=None):
         """
         the environment is just a list of other city objects.
         
@@ -578,20 +796,19 @@ class city:
         if environment == None:
             return
         
-        M = economy.Market()
+        if market == None:
+            market = economy.Market()
         
         for other_city in environment:
             trader = other_city.econ_agent
-            M.set_up_trader(trader)
+            market.set_up_trader(trader)
         
         self.econ_agent.inventory = self.inventory
-        self.econ_agent.market_interaction(M)
-        
+        self.econ_agent.market_interaction(market)
         
     def execution_step(self,delta_t,environment = None):
     
         self.production_tick(delta_t)
-        
         self.trading_tick(environment)
         
         self.corruption_tick()
@@ -642,12 +859,14 @@ class city:
 class Econ:
     def __init__(self):
         self.cyber_econ = basis.Element()
-    
+        
+        self.econ_env = economy.EconomyEnvironment()
+        
     def main(self):
         """simple loop that calls the main of each location."""
         
         for x in self.cyber_econ.elements:
-            x.payload.planning_step(1)
+            x.payload.planning_step(1,self.econ_env)
         
         for x in self.cyber_econ.elements:
             x.payload.execution_step(1)

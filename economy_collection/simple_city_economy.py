@@ -96,6 +96,7 @@ class city:
         self.inventory = inventory # goes here
         self.demand = {} # this is what is being subtracted.
         self.consumption_plan = {} # what am I actually going to consumed, based on demand.
+        self.demand_met = {}
         
         # this will be collection of recipes owned by the citizens.
         # or rather, "in memory"
@@ -207,20 +208,45 @@ class city:
         
         unmet_demand = {}
         
-        # meet generic demands.
-        #for key in self.demand:
-            #if key in crafting.groups:
-                #self.inventory[key]["amount"] -= self.consumption_plan[key]
-        # meet specific demands
-        
+        # it may make sense to reduce all specific demands first
+        # then clean up with more general options.
+        unmet_demand_keys = []
         for key in self.demand:
-            #for gn in crafting.groups:
-                #group = crafting.grous[gn]
-                #if key in group:
-                    #break
-            #if key not in crafting.groups:
-            self.inventory[key]["amount"] -= self.demand[key]["amount"]
+            if self.inventory[key]["amount"] >= self.demand[key]["amount"]:
+                self.inventory[key]["amount"] -= self.demand[key]["amount"]
+                
+            else:
+                unmet_demand[key] = self.demand[key]
         
+        
+        rml = []
+        for key in unmet_demand:
+            if key in crafting.groups:
+                for member in crafting.groups[key]:
+                    if member in self.inventory:
+                        rest = unmet_demand[key]["amount"]
+                        have = self.inventory[member]["amount"]
+                                                
+                        if have > rest:
+                            rml.append(key)
+                            self.inventory[member]["amount"] -= rest
+                            
+                            break
+                            
+                        else:
+                            # it's equal or I have still more demand
+                            diff = rest-have
+                            self.inventory.pop(member)
+                            unmet_demand[key]["amount"] -= diff
+                            
+                                                        
+        for x in rml:
+            unmet_demand.pop(x)
+                
+        keys = list(self.inventory.keys())
+        for x in keys:
+            if self.inventory[x]["amount"]==0:
+                self.inventory.pop(x)
         
         return unmet_demand
         
@@ -433,6 +459,7 @@ class city:
         
         # I'm not going by need at all. is that right?
         # can prefilter? probably.
+        
         for unknown_name in self.needed:
             local_compare_group, possible_products, know_how_d = self.find_possible_products(unknown_name)
             compare_groups[unknown_name] = local_compare_group
@@ -443,30 +470,35 @@ class city:
             
             else: # or I HAVE TO buy it.
                 self.buy_plan_numbers[unknown_name] = self.needed[unknown_name]
-                
-        for group_name in compare_groups:
+        
+        for name in self.needed:
             if economic_environment == None:
                 break
-            group_list = compare_groups[group_name]
+            group_list = compare_groups[name]
             
             # I already did this.
             full_offer_group_list = self.make_full_offer_group_list(group_list, econ_env)
-        
-            relevant_objects = self.filter_relevant_objects(full_offer_group_list, group_name)
-            
-            self.add_to_procurement_plans(relevant_objects,production_plan,buy_plan)
+            relevant_objects = self.filter_relevant_objects(full_offer_group_list, name)
+            local_production = self.add_to_procurement_plans(relevant_objects,production_plan,buy_plan)
             
             # reduce the needed amount by how much I'm making or planning to buy.
+            met = 0
             for x in relevant_objects:
-                self.needed[group_name] -= x.amount
-                if self.needed[group_name] <= 0:
-                    self.needed.pop(group_name)
+                met += x.amount
+                
+            # demand met via xyz objects, because thing is part of the group.
+            if met > 0:
+                d = {
+                    "objects":local_production,
+                    "group members":group_list,
+                    "amount production possible":met,
+                    "demand":self.needed[name],
+                    }
+                
+                self.demand_met[name] = d
             
         self.production_plan = production_plan
         self.buy_plan = buy_plan
-        
-        print("production_plan",production_plan)
-        print("buyplan",buy_plan)
         
         return
         
@@ -515,9 +547,10 @@ class city:
         index = 0
         total_price = 0
         relevant_objects = []
+        if len(full_offer_group_list) ==0:
+            return relevant_objects
         
-        
-        while counter < value:
+        while counter < value :
             my_object = full_offer_group_list[index]
             
             relevant_objects.append(my_object)
@@ -573,30 +606,55 @@ class city:
         I am not properly tracking what I want to buy...
         
         """
-        
+        local_production = []
         for my_object in relevant_objects:
             if "Manufac" in str(type(my_object)):
                 name = my_object.recipe.name
                 if name not in production_plan:
                     production_plan[name] = []
+                local_production.append(my_object)
                 production_plan[name].append(my_object)
                 
             if "Order" in str(type(my_object)):
                 if my_object.good not in buy_plan:
                     buy_plan[my_object.good] = []
                 buy_plan[my_object.good].append(my_object)
-    
+        return local_production
+        
     def market_interaction_planning(self):
+        """
+        
+        get data from other functions and rephrase them to get the
+        input for what I can sell.
+        
+        """
         # make or buy is nice, just buy
+        
+        assert self.buy_plan == {}
+        
+        self.plan_buying()
+        self.plan_selling()
+        self.prepare_orders()
+    
+    def plan_buying(self):
+    
         
         for x in self.needed:
             a = self.needed[x]
             b = self.inventory[x]["amount"]
             
+            # group stuff?
+            # making 4x bread fulfills the demand for 4x food
+            # I know this because I'm doing it one way.
+            # but it's not in here, so I guess it's fair that that's
+            # not really counting against that.
+            
+            # this is from the production side.
+            # does it include make AND buy?
+            # 
             c = 0
-            if x in self.production_plan:
-                for myob in self.production_plan[x]:
-                    c += myob.amount
+            if x in self.demand_met:
+                c += self.demand_met[x]["amount production possible"]
             
             d = 0 
             if x in self.buy_plan and x in self.buy_plan_numbers:
@@ -604,25 +662,37 @@ class city:
                 while d < self.buy_plan_numbers[x] and lc < len(self.buy_plan[x]):
                     my_ob = self.buy_plan[x][lc]
                     d += myob.amount
-                    lc+=1
-            
+                    lc += 1
+                    
             diff = max(a -(b+c+d),0)
             
             # this is only if it's not already in there.
             # and I'm not making any.
             
+            # did I not want to put the buy orders here?
             if diff > 0:
                 self.buy_plan[x] = {"amount":diff}
+                
+            elif diff==0:
+                if x in self.buy_plan:
+                    self.buy_plan.pop(x)
+                if x in self.buy_plan_numbers:
+                    self.buy_plan_numbers.pop(x)
         
-        for x in self.raw_materials_required:
+        for name in self.materials_required:
             if name not in self.buy_plan:
                 self.buy_plan[name] = {"amount":0}
-            self.buy_plan[name] += self.raw_materials_required[name]
+            self.buy_plan[name]["amount"] += self.materials_required[name]
         
         # buy plan was where to buy from.
         
         for x in self.buy_plan_numbers:
-            self.econ_agent.wanted_goods[x]={"amount":self.buy_plan_numbers[x]}#self.buy_plan
+            self.econ_agent.wanted_goods[x]={"amount":self.buy_plan_numbers[x]}
+        
+    
+    def prepare_orders(self):
+        a=1
+        
         
     def production_tick(self, delta_t):
         """
@@ -666,22 +736,94 @@ class city:
         
         """
         
-        for key in self.resources:
-            my_dict = self.resources[key]
-            if my_dict["produces"] not in self.inventory:
-                self.inventory[my_dict["produces"]] = {"amount":0}
-            self.inventory[my_dict["produces"]]["amount"] += my_dict["occupied"] # kind of like an inventory ... hm...
-            
-    def selling_planning_tick(self):
+        # if I have reached this point, I should have all 
+        # the ingredients I need and this step is purely about conversion
+        # buuuut because of the "realities"
+        # if stuff fails I won't have the ingredients after all
+        # so I still need to check that I have evertyhing when
+        # converting.
+        
+        # this is still wrong, I don't want to add food
+        # when I make bread and the tracking is still wrong
+        # 
+        
+        for name in self.demand_met:#self.production_plan:
+            needed = int(self.demand_met[name]["demand"])
+            counter = 0
+            for production_object in self.demand_met[name]["objects"]:
+                
+                
+                # figure out what the actual max is what I can make
+                # with the material I have.
+                mets = []
+                for req in production_object.recipe.requirements:
+                    met = 0
+                    if req in self.inventory:
+                        have = self.inventory[req]["amount"]
+                        need_per = production_object.recipe.requirements[req]
+                        met = have/need_per
+                    mets.append(met)
+                
+                # this is from the production object.
+                mets.append(production_object.amount)
+                number = min(mets)
+                
+                # this is from the need thing,
+                # so it's capped.
+                diff = needed - counter
+                if number > diff:
+                    number = diff
+                
+                # update
+                counter += number
+                
+                # add my product
+                p_name = production_object.recipe.name
+                if p_name not in self.inventory:
+                    self.inventory[p_name] = {"amount":0}
+                self.inventory[p_name]["amount"] += number
+                
+                # deduct my ingredients, which I know is 
+                # fine, because that's what the capping was for
+                # above.
+                requirements = production_object.recipe.requirements
+                for req in requirements:
+                    self.inventory[req]["amount"] -= number * requirements[req]
+                    if self.inventory[req]["amount"] == 0:
+                        self.inventory.pop(req)
+                
+    def plan_selling(self):
         
         rest = {}
         for trade_good_name in self.inventory:
+            # this is one of those dict patterns...
+            
+            if trade_good_name in self.total_materials_needed:
+                tgn = trade_good_name
+                need = self.total_materials_needed[tgn] 
+                have = self.inventory[tgn]["amount"]
+                sellable_ingredients = have - need
+                
+                if sellable_ingredients > 0:
+                    if trade_good_name not in rest:
+                        rest[trade_good_name] = 0
+                    rest[trade_good_name] += sellable_ingredients
             
             # if I need some, don't sell what I need,
             if trade_good_name in self.consumption_plan:
-                diff =  self.inventory[trade_good_name]["amount"] - self.consumption_plan[trade_good_name]
+                tgn = trade_good_name
+                have = self.inventory[tgn]["amount"]
+                cons = self.consumption_plan[tgn]
+                diff = have - cons
+                
+                
                 if diff > 0:
-                    rest[trade_good_name] = diff
+                    if trade_good_name not in rest:
+                        rest[trade_good_name] = 0
+                    rest[trade_good_name] += diff
+            
+            
+                
             
             # else sell it?
             elif self.inventory[trade_good_name]["amount"] > 0:
@@ -710,7 +852,7 @@ class city:
         self.demand_based_actual_needs()
         
         # selling off what I don't need.
-        self.selling_planning_tick()
+        
         
         # figure out what I can make and what I need.        
         self.production_planning()
@@ -728,59 +870,84 @@ class city:
         #crafting.sum_objects_by_common_purpose(self.production_plan)
     
     def ingredient_planning(self,environment):
-        reqs = set()
-        for name in self.production_plan:
-            print("")
-            print(name)
-            print("")
-            for price_point in self.production_plan[name]:
-                print(price_point)
-                for req in price_point.requirement_prices:
-                    #recipe is basically guaranteed to exist.
-                    
-                    req_amount = price_point.amount * self.recipes[name].requirements[req]
-                    print(req, req_amount)
-                    # if I am selling, I want to reduce it.
-                    if req in self.econ_agent.offered_goods:
-                        self.econ_agent.offered_goods[req] -= req_amount
-                    
-                    elif req in self.econ_agent.orders["sell_orders"]:
-                        
-                        
-                        # cancel / modify sell orders.
-                        # that's not good at all.
-                        # I don't want to create them.
-                        # rather than canceling them.
-                        # but I have to create them for the make_or_buy
-                        
-                        # one of the assumptions is wrong.
-                        # if I need the orders for make or buy planning,
-                        # when I already have the stuff, that's wrong.
-                        # I already have prices "in mind" even without orders
-                        # in practice , in my test, I am defining prices.
-                        # the same would happen in other "in practice" cases.
-                        # then I can make the make_or_buy decision
-                        # without orders and I can delay creating orders
-                        # for ingredients, until I'm sure I don't need the ingredients.
-                        
-                        
-                        print("yo",self.econ_agent.orders["sell_orders"])
-                        a=1
-                    
-                    # else I want to buy this, FIND IT.
-                    else:
-                        if req not in self.buy_plan_numbers:
-                            self.buy_plan_numbers[req] = 0
-                        self.buy_plan_numbers[req] += req_amount
-                    
-                    reqs.add(req)
+        """
+        I want this to be a while True loop to figure out things
+        "completely" and not accidentally buy partial ingredients 
+        that I can also make.
         
-        for req in reqs:
-            if req not in self.buy_plan:
-                amount = self.buy_plan_numbers[req]
-                order_list = find_cheapest_seller(environment, req, amount=amount)
-                self.buy_plan[req] = order_list
+        This also belongs in the economy script more than here.
+        
+        does not yet include make or buy decisions for multi level
+        stuff.
+        """
+        covered_items = []
+        temp_needed = {}
+        while True:
+            reqs = set()
+            for name in self.production_plan:
+                
+                covered_items.append(name)
+                
+                for price_point in self.production_plan[name]:
                     
+                    for req in price_point.requirement_prices:
+                        #recipe is basically guaranteed to exist.
+                        
+                        req_amount = price_point.amount * self.recipes[name].requirements[req]
+                        
+                        if False:
+                            
+                            # I changed how I do things, this is no longer accurate.
+                            
+                            # cancel / modify sell orders.
+                            # that's not good at all.
+                            # I don't want to create them.
+                            # rather than canceling them.
+                            # but I have to create them for the make_or_buy
+                            
+                            # one of the assumptions is wrong.
+                            # if I need the orders for make or buy planning,
+                            # when I already have the stuff, that's wrong.
+                            # I already have prices "in mind" even without orders
+                            # in practice , in my test, I am defining prices.
+                            # the same would happen in other "in practice" cases.
+                            # then I can make the make_or_buy decision
+                            # without orders and I can delay creating orders
+                            # for ingredients, until I'm sure I don't need the ingredients.
+                            
+                            a=1
+                        
+                        if req not in temp_needed:
+                            temp_needed[req] = 0
+                        temp_needed[req] += req_amount
+                        reqs.add(req)
+            
+            # I actually want make or buy decisions here as well.
+            # and that kind of means I want a do while here.
+            
+            really_needed = {}
+            for req in temp_needed:
+                num = 0
+                if req in self.inventory:
+                    num = self.inventory[req]["amount"]
+                
+                really_needed[req] = max(temp_needed[req] - num,0)
+                
+            # this is the raw number that I need
+            self.total_materials_needed = temp_needed
+            
+            # this is what I need to get in addition to what
+            # i have, buy or make.
+            self.materials_required = really_needed
+            
+            break
+    
+    def inventory_cleanup(self):
+        keys = list(self.inventory.keys())
+        for x in keys:
+            if self.inventory[x]["amount"]==0:
+                self.inventory.pop(x)
+    
     def trading_tick(self,environment,market=None):
         """
         the environment is just a list of other city objects.

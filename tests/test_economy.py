@@ -418,7 +418,7 @@ class TestEconomy(unittest.TestCase):
         r = MyAgent.find_manufacturing_cost(E,bread_recipe,27)
         
         # can't make any for any price.
-        assert r == (0, [], 0)
+        assert r == (0, [])
 
     def test_find_manufacturing_cost_stocks_prices(self):
         
@@ -1007,12 +1007,12 @@ class TestEconomy(unittest.TestCase):
         
     def test_bartering_1(self):
         # bartering?
-        ENV=economy.EconomyEnvironment()
+        ENV = economy.EconomyEnvironment()
         
-        wheat=economy.Tradegood("wheat")
-        wood=economy.Tradegood("wood")
+        wheat = economy.Tradegood("wheat")
+        wood = economy.Tradegood("wood")
         
-        T1=economy.EconomyAgent()
+        T1 = economy.EconomyAgent()
         T1.inventory={"wood":{"amount":25}}
         T1.offered_goods={"wood":{"amount":25}}
         T1.wanted_goods={"wheat":{"amount":10}}

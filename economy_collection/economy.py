@@ -978,7 +978,7 @@ class EconomyAgent:
             
         requirements_cost = 0
         
-        stocks_breakpoints,stocks_prices  = self.get_stocks_prices(good_recipe, requirements_stocks, env, amount)
+        stocks_breakpoints, stocks_prices  = self.get_stocks_prices(good_recipe, requirements_stocks, env, amount)
         
         # sometimes this can be empty.
         output = self.get_coverage_relevant_orders(env, good_recipe, amount)
@@ -994,7 +994,7 @@ class EconomyAgent:
             # there are no orders feeding into this.
             # I can use only what I have.
             
-            return make_p, manufacturing_price_points, amount_covered
+            return make_p, manufacturing_price_points
         
         
         manufacturing_price_points = self.get_manufacturing_price_points(relevant_valued_objects, break_points, good_recipe, amount)
@@ -1351,13 +1351,12 @@ class EconomyAgent:
                     if specific_product not in fake_needs:
                         fake_needs[specific_product] = 0
                     fake_needs[specific_product] += needed[specific_product]
-                    
+        
         for specific_product in local_compare_group:
             if specific_product not in fake_needs:
                 continue
             if specific_product not in recipes:
                 continue
-            
             recipe = recipes[specific_product]
             
             # also I don't need to decide make or buy at every tick.
@@ -1409,7 +1408,7 @@ class EconomyAgent:
             price_list = self.sell_order_cache[good_recipe.name]
             
         if good_recipe.name not in self.manufacturing_price_point_cache:
-            m_cost = self.find_manufacturing_cost(env, good_recipe, amount)
+            m_cost = self.find_manufacturing_cost(env, good_recipe, amount,requirements_stocks=self.inventory)
             self.manufacturing_price_point_cache[good_recipe.name] = m_cost 
         else:
             m_cost = self.manufacturing_price_point_cache[good_recipe.name]
